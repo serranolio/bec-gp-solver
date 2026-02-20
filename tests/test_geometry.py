@@ -191,6 +191,20 @@ class TestGeometryCart:
 
         assert relative_error(lhs, rhs) < 1e-10
 
+    def test_fourier_transform(self):
+        """ F(ψ(x)) = ψ(k)"""
+        nz, lz = 128, 8.0
+        sz = 0.5
+        geo    = GeometryCart(sizes=(nz,), lengths=(lz,))
+        z,     = geo.grids
+        k,     = np.fft.fftshift(geo.kgrids)
+        psi    = 1 / np.sqrt(2*np.pi*sz**2) * np.exp(-z**2 / (2*sz**2))
+        analytical = 1 / np.sqrt(2*np.pi) * np.exp(-k**2 * sz**2 / 2)
+        numerical  = (lz/nz/np.sqrt(2*np.pi)) * geo.forward_transform(psi)
+        
+        assert relative_error(np.abs(numerical), analytical) < 1e-10
+
+
 
 # =============================================================================
 # Geometry3DAxial tests
@@ -297,4 +311,26 @@ class TestGeometry3DAxial:
         analytical = pi * sr**2 * np.sqrt(pi) * sz   # ∫ 2πr |ψ|² dr dz
 
         assert abs(numerical - analytical) / analytical < 1e-3
+
+    # ------------------------------------------------------------------
+    # multi-component: test linearity
+    # ------------------------------------------------------------------
+
+    def test_kinetic_multicomponent(self, geo):
+        r_, z_ = geo.grids
+        sr1, sz1 = 6.0, 25.0
+        sr2, sz2 = 3.0, 15.0
+
+        psi = np.array([
+            np.exp(-r_**2 / (2*sr1**2) - z_**2 / (2*sz1**2)).reshape(-1),
+            np.exp(-r_**2 / (2*sr2**2) - z_**2 / (2*sz2**2)).reshape(-1),
+        ])
+
+        numerical  = geo.kinetic(psi)
+        analytical = np.array([
+            geo.kinetic(psi[0]),
+            geo.kinetic(psi[1]),
+        ])
+
+        assert relative_error(numerical, analytical) < 1e-10
 
