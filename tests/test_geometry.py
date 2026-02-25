@@ -23,7 +23,7 @@ Run with:
 import numpy as np
 from numpy import pi
 import pytest
-from bec_gp_solver.geometry import GeometryCart, Geometry3DAxial
+from bec_gp_solver.geometry import GeometryCart, Geometry3DAxial, make_geometry
 
 
 # =============================================================================
@@ -200,9 +200,29 @@ class TestGeometryCart:
         k,     = np.fft.fftshift(geo.kgrids)
         psi    = 1 / np.sqrt(2*np.pi*sz**2) * np.exp(-z**2 / (2*sz**2))
         analytical = 1 / np.sqrt(2*np.pi) * np.exp(-k**2 * sz**2 / 2)
-        numerical  = (lz/nz/np.sqrt(2*np.pi)) * geo.forward_transform(psi)
+        numerical  = geo.forward_transform(psi)
         
-        assert relative_error(np.abs(numerical), analytical) < 1e-10
+        assert relative_error(numerical, analytical) < 1e-10
+
+    def test_ifourier_transform(self):
+        """ iF(ψ(k)) = ψ(x)"""
+        nz, lz = 256, 8.0
+        sz = 0.1
+        geo    = GeometryCart(sizes=(nz,), lengths=(lz,))
+        z,     = geo.grids
+        k,     = np.fft.fftshift(geo.kgrids)
+        psi    = 1 / np.sqrt(2*np.pi) * np.exp(-k**2 * sz**2 / 2)
+        analytical = 1 / np.sqrt(2*np.pi*sz**2) * np.exp(-z**2 / (2*sz**2))
+        numerical = geo.inverse_transform(psi)
+
+        assert relative_error(numerical, analytical) < 1e-10
+
+    def test_make_geometry(self):
+        """ test the make_geometry method"""
+        geo = make_geometry("3d_cart", 
+                            sizes=(128, 128, 128), 
+                            lengths=(1, 2, 3))
+        assert geo.dv.sum()==6.0
 
 
 
@@ -232,7 +252,7 @@ class TestGeometry3DAxial:
     @pytest.fixture
     def geo(self):
         #return Geometry3DAxial(nx=64, nz=128, lx=30, lz=40)
-        return Geometry3DAxial(nx=64, nz=128, lx=33.8825, lz=377.3648)
+        return Geometry3DAxial(sizes=(64, 128), lengths=(33.8825, 377.3648))
 
     @pytest.fixture
     def gaussian(self, geo):
@@ -250,7 +270,7 @@ class TestGeometry3DAxial:
         psi, sr, sz = gaussian
         r_, z_      = geo.grids
 
-        numerical  = -geo.grad_z(psi.reshape(-1)).reshape(geo.nx, geo.nz)
+        numerical  = -geo.grad_z(psi.reshape(-1)).reshape(geo.sizes)
         analytical = (-z_ / sz**2) * psi
 
         # exclude boundary region where Gaussian has decayed to ~0
@@ -270,7 +290,7 @@ class TestGeometry3DAxial:
         sr    = geo._kr[2]
         g_z   = jv(0, sr*r_)     # bessel in r and constant in z
 
-        numerical  = geo.kinetic(g_z.reshape(-1)).reshape(geo.nx, geo.nz)
+        numerical  = geo.kinetic(g_z.reshape(-1)).reshape(geo.sizes)
         analytical = (sr**2) * g_z
 
         interior = np.abs(g_z) > 1e-6
@@ -288,7 +308,7 @@ class TestGeometry3DAxial:
         psi, sr, sz = gaussian
         r_, z_      = geo.grids
 
-        numerical  = -geo.kinetic(psi.reshape(-1)).reshape(geo.nx, geo.nz)
+        numerical  = -geo.kinetic(psi.reshape(-1)).reshape(geo.sizes)
         analytical = (r_**2 / (sr**4) - 2 / (sr**2)
                     + z_**2 / (sz**4) - 1 / (sz**2)) * psi
 
@@ -333,4 +353,27 @@ class TestGeometry3DAxial:
         ])
 
         assert relative_error(numerical, analytical) < 1e-10
+
+    def test_transform_roundtrip(self, geo):
+        r_, z_ = geo.grids
+        sr, sz = 4.0, 20.0
+        psi = np.exp(-r_**2 / (2*sr**2) - z_**2 / (2*sz**2)).reshape(-1)
+
+        psi_rt = geo.inverse_transform(geo.forward_transform(psi))
+
+        interior = np.abs(psi) > 1e-6
+        err = np.max(np.abs(psi_rt[interior] - psi[interior]))
+        assert err < 1e-5
+
+    def test_make_geometry(self):
+        try:
+            geo = make_geometry("no_name", 
+                                sizes=(256, 256),
+                                lengths=(2,3))
+        except ValueError:
+            geo = make_geometry("3d_axial", 
+                                sizes=(256, 256), 
+                                lengths=(2, 3))
+        assert np.allclose(geo.dv.sum(), np.pi*2**2*3, rtol=1e-1)
+
 
