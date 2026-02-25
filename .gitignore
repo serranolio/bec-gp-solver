@@ -2,9 +2,12 @@
 .pixi/*
 !.pixi/config.toml
 
-# Python cache files
+# Python cache and coverage files
 __pycache__/
 *.py[cod]
+.coverage
+.coverage.*
+htmlcov/
 
 # Swap files
 *.swp
