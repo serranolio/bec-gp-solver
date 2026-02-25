@@ -109,7 +109,7 @@ def _compute_derived(cfg):
     # ------------------------------------------------------------------
     # 4. Interaction matrix (geometry-dependent)
     # ------------------------------------------------------------------
-    a_matrix      = np.array(sys['a_matrix']) * a_si / l_unit
+    a_matrix      = np.atleast_2d(np.array(sys['a_matrix']) * a_si / l_unit)
     geometry_kind = cfg['geometry']['kind']
     g_ref         = 8 * pi * 100.4 * a_si / l_unit   # reference coupling
     mu            = (15 * w3**3 * n_atoms * g_ref / (64 * pi))**(2/5)
@@ -139,8 +139,11 @@ def _compute_derived(cfg):
     # ------------------------------------------------------------------
     geo_cfg = cfg['geometry']
     rx = np.sqrt(4 * mu) / wx
+    ry = np.sqrt(4 * mu) / wy
     rz = np.sqrt(4 * mu) / wz
+    
     lx = geo_cfg['lx_rx_factor'] * rx
+    ly = geo_cfg['ly_ry_factor'] * ry
     lz = geo_cfg['lz_rz_factor'] * rz
 
     return dict(
@@ -164,7 +167,7 @@ def _compute_derived(cfg):
         g_matrix = g_matrix,
         mu       = mu,
         # geometry
-        rx=rx, rz=rz, lx=lx, lz=lz,
+        rx=rx, ry=ry, rz=rz, lx=lx, ly=ly, lz=lz,
         # spin-orbit
         omega_r  = omega_r,
         k_l      = k_l,
@@ -239,11 +242,14 @@ def load_config(path):
 
     # build geometry
     geo_cfg = cfg['geometry']
-    geo = make_geometry(
-        geo_cfg['kind'],
-        nx=geo_cfg['nx'], nz=geo_cfg['nz'],
-        lx=d['lx'], lz=d['lz'],
-    )
+
+    all_sizes   = (geo_cfg['nx'], geo_cfg['ny'], geo_cfg['nz'])
+    all_lengths = (d['lx'], d['ly'], d['lz'])
+
+    sizes   = tuple(n for n, l in zip(all_sizes, all_lengths) if n != 0)
+    lengths = tuple(l for n, l in zip(all_sizes, all_lengths) if n != 0)
+
+    geo = make_geometry(geo_cfg['kind'], sizes=sizes, lengths=lengths)
 
     # build ramp callables
     lattice_strength = _build_lattice_ramp(cfg, d['t_unit'])

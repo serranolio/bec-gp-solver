@@ -48,8 +48,10 @@ omega_r = 2.7
 [geometry]
 kind         = "3d_axial"
 nx           = 64
+ny           = 0            # unused for 3d_axial and 2d_cart
 nz           = 512
 lx_rx_factor = 1.5
+ly_ry_factor = 0.0          # unused for 3d_axial and 2d_cart
 lz_rz_factor = 2.5
 
 # =============================================================================
