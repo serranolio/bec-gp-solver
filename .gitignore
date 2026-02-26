@@ -13,3 +13,8 @@ htmlcov/
 *.swp
 *.swo
 *~
+
+# Data files
+*.csv
+*.npy
+*.data
