@@ -14,7 +14,8 @@ htmlcov/
 *.swo
 *~
 
-# Data files
+# Data and output files
 *.csv
 *.npy
 *.data
+*.out
