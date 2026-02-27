@@ -16,10 +16,10 @@ Workflow
 
 Usage
 -----
-    python run_simulation.py --config configs/sweep/job_0042.toml 
+    python run_simulation.py
+    --config configs/sweep/job_0042.toml 
     --output-dir PATH/output/dir
     --gs-dir PATH/input/dir/
-
 
 """
 
@@ -131,51 +131,162 @@ def _renormalise(psi_gs, geo, n_comp):
     return (psi2d / np.sqrt(norm)).reshape(-1)
 
 
-def load_or_compute_ground_state(cfg, geo, rhs_kwargs, gs_dir):
+def _load_initial_state(path, geo, n_comp):
     """
-    Return the ground state wavefunction, loading from cache if available.
-    If not found, run imaginary-time evolution with solve_ivp and cache it.
+    Load a wavefunction from a .npy file and validate its shape.
 
-    The cache is shared across samples — sample index and ramp parameters
-    do not affect the ground state.
+    Expected shape: (n_comp * N_total,) — the same flat layout used
+    throughout the solver.
     """
-    gs_path = _gs_filename(cfg, gs_dir)
+    psi = np.load(path).astype(np.complex128)
+    expected = n_comp * len(geo.dv)
+    if psi.size != expected:
+        raise ValueError(
+            f"Initial state loaded from '{path}' has {psi.size} elements "
+            f"but the geometry requires {expected} (n_comp={n_comp}, "
+            f"N_total={len(geo.dv)})."
+        )
+    return psi.reshape(-1)
 
-    if gs_path.exists():
-        print(f"Ground state found: {gs_path.name}")
-        return np.load(gs_path)
 
-    print("Ground state not found. Running imaginary-time cooling ...")
+def prepare_initial_state(cfg, geo, initial_state_path=None):
+    """
+    Return the initial state for real-time evolution or imaginary-time
+    cooling, depending on what the caller provides.
 
+    Priority:
+        1. Load from --initial-state path if provided.
+        2. Fall back to a Thomas-Fermi profile.
+
+    The returned state is always normalised to unit norm.
+    """
+    n_comp = cfg['system']['n_components']
+
+    if initial_state_path is not None:
+        print(f"Loading initial state from: {initial_state_path}")
+        psi0 = _load_initial_state(initial_state_path, geo, n_comp)
+    else:
+        print("No initial state provided — using Thomas-Fermi profile.")
+        psi0 = _thomas_fermi_initial_state(cfg, geo)
+
+    return _renormalise(psi0, geo, n_comp)
+
+
+# =============================================================================
+# Imaginary-time cooling
+# =============================================================================
+
+def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir):
+    """
+    Run imaginary-time evolution to find the ground state.
+
+    The Hamiltonian is time-independent in this mode: all time-dependent
+    parameters (detuning ramp, lattice ramp) are evaluated at t=0 by
+    the 'imaginary' mode of get_rhs().
+
+    The result is normalised, saved to out_dir, and returned.
+
+    Parameters
+    ----------
+    cfg        : raw config dict
+    geo        : Geometry instance
+    rhs_kwargs : dict — as returned by load_config(), passed to get_rhs()
+    psi0       : complex array — initial guess, shape (n_comp * N_total,)
+    out_dir    : str or Path — directory to save the ground state .npy file
+    """
     gs_cfg = cfg['ground_state']
-    t_end  = gs_cfg['steps'] * gs_cfg['step_size']   # total imaginary time
+    t_end  = gs_cfg['steps'] * gs_cfg['step_size']
 
-    # imaginary-time RHS with fixed (t=0) detuning and lattice
+    print(f"Running imaginary-time cooling: {gs_cfg['steps']} steps "
+          f"× dt={gs_cfg['step_size']} = t_end={t_end:.1f} (recoil units)")
+
     rhs_imag = get_rhs(geo=geo, mode='imaginary', **rhs_kwargs)
+    sol      = _solve(rhs_imag, psi0, t_span=(0.0, t_end), t_eval=[t_end])
 
-    psi0 = _thomas_fermi_initial_state(cfg, geo)
+    n_comp = cfg['system']['n_components']
+    psi_gs = _renormalise(sol.y[:, -1], geo, n_comp)
 
-    sol = _solve(rhs_imag, psi0, t_span=(0.0, t_end), t_eval=[t_end])
-
-    psi_gs = _renormalise(sol.y[:, -1], geo, cfg['system']['n_components'])
-
-    Path(gs_dir).mkdir(parents=True, exist_ok=True)
+    # save with a content-based filename so it can be used as --initial-state
+    # in subsequent real-time runs
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    gs_path  = out_path / _gs_filename(cfg)
     np.save(gs_path, psi_gs)
-    print(f"Ground state saved: {gs_path.name}")
+    print(f"Ground state saved: {gs_path}")
+
     return psi_gs
+
+
+def _gs_filename(cfg):
+    """
+    Filename for the ground state based on the initial physics parameters.
+    Uses a short MD5 hash of the relevant config sections so that different
+    physical setups never collide.
+    """
+    sweep   = cfg['sweep']
+    physics = {
+        'geometry'   : cfg['geometry'],
+        'trap'       : cfg['trap'],
+        'system'     : cfg['system'],
+        'spin_orbit' : cfg['spin_orbit'],
+        'omega_l'    : sweep['omega_l_start'],
+        'delta_hz'   : sweep['delta_start_hz'],
+    }
+    key = hashlib.md5(str(sorted(str(physics))).encode()).hexdigest()[:10]
+    return (f"gs"
+            f"_delta_{sweep['delta_start_hz']:.0f}hz"
+            f"_omega_{sweep['omega_l_start']:.2f}"
+            f"_{key}.npy")
 
 
 # =============================================================================
 # TWA noise
 # =============================================================================
 
-def add_twa_noise(psi_gs, geo, n_atoms, n_comp):
-    """Add half-quantum of vacuum noise per mode (TWA approximation)."""
-    scale = 1 / np.sqrt(4 * n_atoms * np.tile(geo.dv, n_comp))
-    noise = (np.random.normal(scale=scale, size=psi_gs.shape)
-           + 1j * np.random.normal(scale=scale, size=psi_gs.shape))
-    return psi_gs + noise
+def add_twa_noise(psi_gs, geo, n_atoms, n_comp, sample):
+    """
+    Add half-quantum of vacuum noise per mode (TWA approximation).
 
+    Noise is generated in momentum space with amplitude 1/sqrt(4 N dvk),
+    then transformed back to real space. A circular de-aliasing mask
+    retains only modes within 2/3 of the maximum |k| (standard 2/3 rule),
+    which prevents aliasing errors from the nonlinear interaction term.
+
+    sample == 0 is treated as the mean-field trajectory: noise is set to
+    zero so the ground state is evolved without any stochastic fluctuations.
+
+    Parameters
+    ----------
+    psi_gs : complex array, shape (n_comp * N_total,)
+    geo    : Geometry instance — must expose kgrids, dv, dvk
+    n_atoms: float
+    n_comp : int
+    sample : int — noise realisation index; 0 means no noise
+    """
+    N_total  = geo.dv.shape[0]
+    kr_, kz_ = geo.kgrids                          # both shape (nx, nz)
+
+    # de-aliasing mask: keep modes inside 2/3 of the maximum |k| radius
+    k2   = kr_**2 + kz_**2
+    mask = (k2 <= k2.max() * (2.0 / 3.0)**2).reshape(N_total)
+
+    # generate noise in k-space, one row per component
+    noise_k = (
+        np.random.normal(scale=1 / np.sqrt(4 * n_atoms * geo.dvk),
+                         size=(n_comp, N_total))
+      + 1j * np.random.normal(scale=1 / np.sqrt(4 * n_atoms * geo.dvk),
+                               size=(n_comp, N_total))
+    )
+
+    # apply mask and transform back to real space
+    noise = geo.inverse_transform(
+        noise_k * mask[None, :]
+    ).reshape(n_comp * N_total)
+
+    if sample == 0:
+        noise = np.zeros_like(noise)
+
+    return psi_gs + noise
 
 # =============================================================================
 # Observables
@@ -248,7 +359,28 @@ def build_output_stem(cfg):
 # Main
 # =============================================================================
 
-def run(config_path, output_dir='output', gs_dir='ground_states'):
+def run(config_path,
+        output_dir='output',
+        initial_state_path=None,
+        imag=False):
+    """
+    Main entry point.
+
+    Parameters
+    ----------
+    config_path        : str or Path — TOML config file
+    out_dir            : str or Path — directory for all output files
+    initial_state_path : str or Path or None
+                         Path to a .npy wavefunction to use as the starting
+                         state. For real-time runs this is the state that gets
+                         evolved. For imaginary-time runs (imag=True) this is
+                         the first guess for cooling. If None, a Thomas-Fermi
+                         profile is used.
+    imag               : bool
+                         If True, run imaginary-time cooling and save the
+                         ground state to out_dir, then exit.
+                         If False (default), run real-time evolution.
+    """
     config_path = Path(config_path)
 
     # --- load config ---
@@ -259,14 +391,24 @@ def run(config_path, output_dir='output', gs_dir='ground_states'):
 
     d = _compute_derived(cfg)
 
-    # --- ground state ---
-    psi_gs = load_or_compute_ground_state(cfg, geo, rhs_kwargs, gs_dir)
+    # --- prepare initial state ---
+    psi0 = prepare_initial_state(cfg, geo, initial_state_path)
+
+    # --- imaginary-time mode: cool and exit ---
+    if imag:
+        run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir)
+        return
+
+    # --- real-time mode ---
 
     # --- optional TWA noise ---
     if cfg['simulation']['twa_noise'] and cfg['sweep']['sample'] > 0:
-        psi_gs = add_twa_noise(psi_gs, geo, d['n_atoms'], d['n_comp'])
+        psi_gs = add_twa_noise(psi0,
+                               geo,
+                               d['n_atoms'],
+                               d['n_comp'],
+                               cfg['sweep']['sample'])
 
-    # --- real-time evolution ---
     sim       = cfg['simulation']
     sweep     = cfg['sweep']
     t_total   = sweep['total_time_ms'] * 1e-3 / d['t_unit']
@@ -275,8 +417,7 @@ def run(config_path, output_dir='output', gs_dir='ground_states'):
     print(f"Real-time evolution: t_total={t_total:.2f}, frames={sim['t_frames']}")
 
     rhs_real = get_rhs(geo=geo, mode='real', **rhs_kwargs)
-
-    sol   = _solve(rhs_real, psi_gs, t_span=(0.0, t_total), t_eval=t_eval)
+    sol   = _solve(rhs_real, psi0, t_span=(0.0, t_total), t_eval=t_eval)
     psi_t = sol.y   # complex array, shape (n_comp * N_total, n_frames)
 
     # --- compute and save observables ---
@@ -293,16 +434,48 @@ def run(config_path, output_dir='output', gs_dir='ground_states'):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run a GP simulation from a TOML config.')
-    parser.add_argument('--config',
-                        required=True,
-                        help='Path to TOML config file')
-    parser.add_argument('--output-dir', 
-                        default='output',
-                        help='Directory for output files')
-    parser.add_argument('--gs-dir',
-                        default='ground_states', 
-                        help='Directory for ground state cache')
+    parser = argparse.ArgumentParser(
+            description='GP equation solver for spin-orbit-coupled BECs.',
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="""
+Examples:
+  # imaginary-time cooling from Thomas-Fermi guess
+  python run_simulation.py --config base.toml --imag --out-dir ground_states/
+
+  # imaginary-time cooling from a previous result
+  python run_simulation.py --config base.toml --imag --initial-state prev_gs.npy --out-dir ground_states/
+
+  # real-time evolution from a ground state
+  python run_simulation.py --config job_0042.toml --initial-state ground_states/gs_delta_5000hz_omega_0.20_a3f82c9d1b.npy --out-dir output/
+
+  # real-time evolution from Thomas-Fermi (no prior ground state)
+  python run_simulation.py --config job_0042.toml --out-dir output/
+        """
+            )
+    parser.add_argument(
+        '--config', required=True,
+        help='Path to TOML config file.'
+    )
+    parser.add_argument(
+        '--initial-state', default=None, dest='initial_state',
+        help='Path to a .npy wavefunction to use as the initial state. '
+             'For --imag runs this is the first guess for cooling. '
+             'If omitted, a Thomas-Fermi profile is used.'
+    )
+    parser.add_argument(
+        '--output-dir', default='output', dest='output_dir',
+        help='Directory for output files (default: output/).'
+    )
+    parser.add_argument(
+        '--imag', action='store_true',
+        help='Run imaginary-time cooling instead of real-time evolution. '
+             'Saves the ground state to --out-dir and exits.'
+    )
     args = parser.parse_args()
 
-    run(args.config, args.output_dir, args.gs_dir)
+    run(
+        config_path        = args.config,
+        output_dir         = args.output_dir,
+        initial_state_path = args.initial_state,
+        imag               = args.imag,
+    )
