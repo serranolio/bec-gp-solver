@@ -19,7 +19,7 @@ f_recoil = 1960.0            # Hz
 n_atoms      = 193369.0
 n_components = 2
 sigma_z      = [-1.0, 1.0] # [-1.0, 1.0, 3.0]
-q_zeeman_hz  = [0.0]#[0.0, 0.0, 7189.099499024451]  # Hz
+q_zeeman_hz  = [0.0, 0.0] # [0.0, 0.0, 7189.099499024451]  # Hz
 
 # scattering length matrix in units of a_si
 a_matrix = [[100.40, 100.41],
@@ -69,7 +69,7 @@ step_size = 0.02      # recoil units
 [simulation]
 t_frames    = 401     # number of output frames
 dt_max      = 0.01    # maximum time step (recoil units)
-twa_noise   = true   # add TWA quantum noise to initial state
+twa_noise   = false   # add TWA quantum noise to initial state
 
 # Which observables to save — add/remove entries as needed.
 # Supported: "polarization", "populations", "wavefunction", "momentum_density"
@@ -79,9 +79,9 @@ observables = ["wavefunction"]
 # Sweep parameters (overridden per job by generate_sweep.py)
 # =============================================================================
 [sweep]
-sample         = 1
+sample         = 0
 ramp_time_ms   = 4.0
-total_time_ms  = 50.0
+total_time_ms  = 20.0
 delta_start_hz = 0.0
 delta_end_hz   = 0.0
 omega_l_start  = 0.9
