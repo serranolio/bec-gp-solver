@@ -113,7 +113,12 @@ def _thomas_fermi_initial_state(cfg, geo):
     n_comp = cfg['system']['n_components']
 
     r_, z_ = geo.grids
-    trap   = ((d['wx'] * r_)**2 + (d['wz'] * z_)**2) / 4
+    if geo.basis=="3d_axial":
+        active_freqs = [np.sqrt(d['wx']*d['wy']), d['wz']]
+    else:
+        active_freqs = [d['wx'], d['wy'], d['wz']][-geo.ndim:]
+    trap = sum((w*r)**2/4 for w, r, in zip(active_freqs, geo.grids))
+    #trap   = ((d['wx'] * r_)**2 + (d['wz'] * z_)**2) / 4
     psi0   = np.sqrt(np.maximum(d['mu'] - trap, 0) / d['g_ref'] / d['n_atoms']) + 0j
     psi0   = psi0.reshape(-1)
     norm   = (geo.dv * np.abs(psi0)**2).sum()
@@ -440,16 +445,18 @@ if __name__ == '__main__':
             epilog="""
 Examples:
   # imaginary-time cooling from Thomas-Fermi guess
-  python run_simulation.py --config base.toml --imag --out-dir ground_states/
+  python run_simulation.py --config base.toml --imag --output-dir ground_states/
 
   # imaginary-time cooling from a previous result
-  python run_simulation.py --config base.toml --imag --initial-state prev_gs.npy --out-dir ground_states/
+  python run_simulation.py --config base.toml --imag --initial-state
+  prev_gs.npy --output-dir ground_states/
 
   # real-time evolution from a ground state
-  python run_simulation.py --config job_0042.toml --initial-state ground_states/gs_delta_5000hz_omega_0.20_a3f82c9d1b.npy --out-dir output/
+  python run_simulation.py --config job_0042.toml --initial-state
+  ground_states/gs_delta_5000hz_omega_0.20_a3f82c9d1b.npy --output-dir output/
 
   # real-time evolution from Thomas-Fermi (no prior ground state)
-  python run_simulation.py --config job_0042.toml --out-dir output/
+  python run_simulation.py --config job_0042.toml --output-dir output/
         """
             )
     parser.add_argument(
