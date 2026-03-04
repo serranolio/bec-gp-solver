@@ -65,7 +65,10 @@ def _build_trap_potential(geo, wx, wy, wz):
     Aligns (wx, wy, wz) to the last geo.ndim axes, ignoring unused ones.
     Returns a flat 1D array of shape (N_total,).
     """
-    active_freqs = [wx, wy, wz][-geo.ndim:]
+    if geo.basis=="3d_axial":
+        active_freqs = [np.sqrt(wx*wy), wz]
+    else:
+        active_freqs = [wx, wy, wz][-geo.ndim:]
     U = sum((w * r)**2 / 4 for w, r in zip(active_freqs, geo.grids))
     return U.reshape(-1)
 
@@ -99,7 +102,7 @@ def _H_sp(psi, geo, sigma_z, delta, q_zeeman, Omega):
         [-½∇² + 2σ_z(-i∂_z) + σ_z² + Δ + q] ψ  +  Ω/2 · ψ
     """
     T_psi  = geo.kinetic(psi)
-    Kz_psi = geo.grad_z(psi)
+    Kz_psi = -1j * geo.grad_z(psi)
     diag   = (2 * sigma_z[:, None] * Kz_psi
               + (sigma_z**2 + delta + q_zeeman)[:, None] * psi)
     return T_psi + diag + 0.5 * (Omega @ psi)
