@@ -104,6 +104,7 @@ class GeometryCart(Geometry):
         self.ndim        = len(sizes)
         self.sizes       = sizes
         self.grid_points = sizes
+        self.lengths     = lengths
         self.basis       = f"{self.ndim}d_cart"
 
         # grid spacings
