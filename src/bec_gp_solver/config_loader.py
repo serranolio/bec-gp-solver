@@ -142,9 +142,11 @@ def _compute_derived(cfg):
     ry = np.sqrt(4 * mu) / wy
     rz = np.sqrt(4 * mu) / wz
     
+    m_z = (geo_cfg['lz_rz_factor'] * rz) // (2*pi/k_l)
+
     lx = geo_cfg['lx_rx_factor'] * rx
     ly = geo_cfg['ly_ry_factor'] * ry
-    lz = geo_cfg['lz_rz_factor'] * rz
+    lz = (2*pi / k_l) * m_z
 
     return dict(
         # units
