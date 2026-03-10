@@ -70,7 +70,7 @@ def _compute_derived(cfg):
         fx, fy, fz, wx, wy, wz, w3,
         n_atoms, n_comp, sigma_z, q_zeeman,
         a_matrix, g_ref, g_matrix, mu,
-        rx, rz, lx, lz,
+        rx, ry, rz, lx, ly, lz,
         omega_r, k_l
     """
     # ------------------------------------------------------------------
