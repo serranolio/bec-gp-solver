@@ -19,7 +19,6 @@ Washington State University
 import numpy as np
 from numpy import pi
 from abc import ABC, abstractmethod
-#from scipy.special import jv, jn_zeros
 from discrete_hankel_transform import HankelTransform
 
 
@@ -207,8 +206,6 @@ class Geometry3DAxial(Geometry):
 
         # zeros of J₀ needed for Hankel quadrature
         self._ht = HankelTransform(nx, order=0, r_max=lx)
-        #zeros_nx  = jn_zeros(0, nx)
-        #zeros_nx1 = jn_zeros(0, nx + 1)
 
         # coordinate arrays
         r = self._ht.r
@@ -238,8 +235,21 @@ class Geometry3DAxial(Geometry):
         # kinetic matrix in r: built once, O(nx²), applied by matmul
         # T_r ψ = iDHT[ kr² · DHT[ψ] ] precomputed as a dense (nx × nx) matrix
         print("Building radial kinetic energy matrix …")
-        self._Tr = self._ht.backward(np.diag(kr**2) @ 
-                                     self._ht.forward(np.eye(nx), axis=0), axis=0)
+        try:
+            self._Tr = self._ht.backward(
+                    np.diag(kr**2) @ self._ht.forward(np.eye(nx), axis=0),
+                    axis=0
+                    )
+        except MemoryError as e:
+            raise MemoryError(
+                    f"Failed to allocate {nx}×{nx} radial kinetic matrix. "
+                    f"Required memory: ~{(nx**2 * 16) / (1024**3):.2f} GB. "
+                    f"Try reducing nx in your config file."
+                    ) from e
+        except Exception as e:
+            raise RuntimeError(
+                    f"Failed to build radial kinetic matrix for nx={nx}: {e}"
+                    ) from e
         print("Done.")
         
 
@@ -307,7 +317,7 @@ def make_geometry(kind, **kwargs):
 
     Examples
     --------
-    >>> geo = make_geometry('1d',       sizes=(512,),        lengths=(lz,))
+    >>> geo = make_geometry('1d_cart'   sizes=(512,),        lengths=(lz,))
     >>> geo = make_geometry('3d_cart',  sizes=(64, 64, 512), lengths=(lx, ly, lz))
     >>> geo = make_geometry('3d_axial', sizes=(64, 512),     lengths=(lx, lz))
     """
