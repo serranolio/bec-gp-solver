@@ -118,7 +118,6 @@ def _thomas_fermi_initial_state(cfg, geo):
     else:
         active_freqs = [d['wx'], d['wy'], d['wz']][-geo.ndim:]
     trap = sum((w*r)**2/4 for w, r, in zip(active_freqs, geo.grids))
-    #trap   = ((d['wx'] * r_)**2 + (d['wz'] * z_)**2) / 4
     psi0   = np.sqrt(np.maximum(d['mu'] - trap, 0) / d['g_ref'] / d['n_atoms']) + 0j
     psi0   = psi0.reshape(-1)
     norm   = (geo.dv * np.abs(psi0)**2).sum()
@@ -220,28 +219,6 @@ def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir):
     print(f"Ground state saved: {gs_path}")
 
     return psi_gs
-
-
-def _gs_filename(cfg):
-    """
-    Filename for the ground state based on the initial physics parameters.
-    Uses a short MD5 hash of the relevant config sections so that different
-    physical setups never collide.
-    """
-    sweep   = cfg['sweep']
-    physics = {
-        'geometry'   : cfg['geometry'],
-        'trap'       : cfg['trap'],
-        'system'     : cfg['system'],
-        'spin_orbit' : cfg['spin_orbit'],
-        'omega_l'    : sweep['omega_l_start'],
-        'delta_hz'   : sweep['delta_start_hz'],
-    }
-    key = hashlib.md5(str(sorted(str(physics))).encode()).hexdigest()[:10]
-    return (f"gs"
-            f"_delta_{sweep['delta_start_hz']:.0f}hz"
-            f"_omega_{sweep['omega_l_start']:.2f}"
-            f"_{key}.npy")
 
 
 # =============================================================================
@@ -408,11 +385,11 @@ def run(config_path,
 
     # --- optional TWA noise ---
     if cfg['simulation']['twa_noise'] and cfg['sweep']['sample'] > 0:
-        psi_gs = add_twa_noise(psi0,
-                               geo,
-                               d['n_atoms'],
-                               d['n_comp'],
-                               cfg['sweep']['sample'])
+        psi0 = add_twa_noise(psi0,
+                             geo,
+                             d['n_atoms'],
+                             d['n_comp'],
+                             cfg['sweep']['sample'])
 
     sim       = cfg['simulation']
     sweep     = cfg['sweep']
