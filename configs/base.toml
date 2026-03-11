@@ -66,7 +66,6 @@ step_size = 0.02      # recoil units
 # =============================================================================
 [simulation]
 t_frames    = 201     # number of output frames
-dt_max      = 0.01    # maximum time step (recoil units)
 twa_noise   = false   # add TWA quantum noise to initial state
 
 # Which observables to save — add/remove entries as needed.
