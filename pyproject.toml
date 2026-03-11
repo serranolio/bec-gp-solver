@@ -24,3 +24,13 @@ scipy = ">=1.17.0,<2"
 pytest = ">=9.0.2,<10"
 pytest-cov = ">=7.0.0,<8"
 tomli-w = ">=1.2.0,<2"
+
+[tool.pixi.feature.dev.dependencies]
+matplotlib = ">=3.10.8,<4"
+ipython = ">=9.11.0,<10"
+jupyter = ">=1.1.1,<2"
+
+
+[tool.pixi.environments]
+default = []
+dev = ["dev"]
