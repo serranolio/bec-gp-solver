@@ -97,14 +97,14 @@ def _gs_cache_key(cfg):
     return hashlib.md5(blob).hexdigest()[:10]
 
 
-def _gs_filename(cfg, gs_dir):
+def _gs_filename(cfg):
     sweep = cfg['sweep']
     key   = _gs_cache_key(cfg)
     name  = (f"gs"
              f"_delta_{sweep['delta_start_hz']:.0f}hz"
              f"_omega_{sweep['omega_l_start']:.2f}"
              f"_{key}.npy")
-    return Path(gs_dir) / name
+    return name
 
 
 def _thomas_fermi_initial_state(cfg, geo):
@@ -334,7 +334,8 @@ def build_output_stem(cfg):
             f"_ramp_{s['ramp_time_ms']:.0f}ms"
             f"_di_{s['delta_start_hz']:.0f}hz"
             f"_df_{s['delta_end_hz']:.0f}hz"
-            f"_ol_{s['omega_l_start']:.2f}")
+            f"_omli_{s['omega_l_start']:.2f}"
+            f"_omlf_{s['omega_l_end']:.2f}")
 
 
 # =============================================================================
