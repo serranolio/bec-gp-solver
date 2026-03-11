@@ -27,13 +27,13 @@ from pathlib import Path
 # =============================================================================
 
 SWEEP = {
-    'ramp_time_ms'   : list(range(10, 110, 10)),   # 10, 20, ..., 100 ms
+    'ramp_time_ms'   : list(range(10, 110, 10)),
     'total_time_ms'  : [10.0],
     'delta_start_hz' : [0.0],
     'delta_end_hz'   : [0.0],
     'omega_l_start'  : [0.9],
     'omega_l_end'    : [0.3],
-    'sample'         : list(range(10)),             # samples 0 and 1
+    'sample'         : list(range(10)),
 }
 
 def generate_sweep(base_path, out_dir):
