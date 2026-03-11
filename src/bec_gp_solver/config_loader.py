@@ -261,9 +261,9 @@ def load_config(path):
     sweep = cfg['sweep']
     print(f"Config loaded: {path.name}")
     print(f"  geometry    : {geo_cfg['kind']}  "
-          f"nx={geo_cfg['nx']}, nz={geo_cfg['nz']}")
-    print(f"  box sizes   : lx={d['lx']:.2f}, lz={d['lz']:.2f}  (recoil units)")
-    print(f"  TF radii    : rx={d['rx']:.2f}, rz={d['rz']:.2f}")
+          f"nx={geo_cfg['nx']}, ny={geo_cfg['ny']}, nz={geo_cfg['nz']}")
+    print(f"  box sizes   : lx={d['lx']:.5f}, ly={d['ly']:.5f}, lz={d['lz']:.5f}  (recoil units)")
+    print(f"  TF radii    : rx={d['rx']:.5f}, ry={d['ry']:.5f}, rz={d['rz']:.5f}")
     print(f"  mu          : {d['mu']:.4f}")
     print(f"  sample      : {sweep['sample']}")
     print(f"  ramp time   : {sweep['ramp_time_ms']} ms")
