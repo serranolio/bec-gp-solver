@@ -21,6 +21,9 @@ from numpy import pi
 from abc import ABC, abstractmethod
 from discrete_hankel_transform import HankelTransform
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 # =============================================================================
 # Abstract base class
@@ -234,7 +237,7 @@ class Geometry3DAxial(Geometry):
 
         # kinetic matrix in r: built once, O(nx²), applied by matmul
         # T_r ψ = iDHT[ kr² · DHT[ψ] ] precomputed as a dense (nx × nx) matrix
-        print("Building radial kinetic energy matrix …")
+        logger.info("Building radial kinetic energy matrix …")
         try:
             self._Tr = self._ht.backward(
                     np.diag(kr**2) @ self._ht.forward(np.eye(nx), axis=0),
@@ -250,7 +253,7 @@ class Geometry3DAxial(Geometry):
             raise RuntimeError(
                     f"Failed to build radial kinetic matrix for nx={nx}: {e}"
                     ) from e
-        print("Done.")
+        logger.info("Done.")
         
 
     # -------------------------------------------------------------------------
@@ -322,6 +325,7 @@ def make_geometry(kind, **kwargs):
     >>> geo = make_geometry('3d_axial', sizes=(64, 512),     lengths=(lx, lz))
     """
     cart_aliases = {'1d_cart', '2d_cart', '3d_cart'}
+    logger.info(f"Setting geometry to {kind}")
     if kind in cart_aliases:
         return GeometryCart(**kwargs)
     elif kind == '3d_axial':

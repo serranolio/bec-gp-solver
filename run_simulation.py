@@ -34,6 +34,37 @@ from scipy.integrate import solve_ivp
 
 from bec_gp_solver.config_loader import load_config, _compute_derived
 from bec_gp_solver.gp_equation   import get_rhs
+import logging
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# logging output file
+# =============================================================================
+
+def _setup_logging(log_file=None, verbose=False):
+    """
+      Configure the root logger for a simulation run.
+
+      Parameters
+      ----------
+      log_file : str or Path or None
+          If given, also write all log output to this file.
+          Intended for SLURM runs: pass a per-job path derived from
+          the config filename or SLURM_ARRAY_TASK_ID.
+      verbose : bool
+          If True, set level to DEBUG. Default is INFO.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    fmt = "%(asctime)s  %(levelname)-8s  %(name)s — %(message)s"
+    datefmt = "%Y-%m-%d %H:%M:%S"
+
+    handlers = [logging.StreamHandler()]
+    if log_file is not None:
+        handlers.append(logging.FileHandler(log_file))
+    logging.basicConfig(level=level,
+                        format=fmt,
+                        datefmt=datefmt,
+                        handlers=handlers)
 
 
 # =============================================================================
@@ -167,10 +198,10 @@ def prepare_initial_state(cfg, geo, initial_state_path=None):
     n_comp = cfg['system']['n_components']
 
     if initial_state_path is not None:
-        print(f"Loading initial state from: {initial_state_path}")
+        logger.info(f"Loading initial state from: {initial_state_path}")
         psi0 = _load_initial_state(initial_state_path, geo, n_comp)
     else:
-        print("No initial state provided — using Thomas-Fermi profile.")
+        logger.info("No initial state provided — using Thomas-Fermi profile.")
         psi0 = _thomas_fermi_initial_state(cfg, geo)
 
     return _renormalise(psi0, geo, n_comp)
@@ -201,8 +232,8 @@ def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir):
     gs_cfg = cfg['ground_state']
     t_end  = gs_cfg['steps'] * gs_cfg['step_size']
 
-    print(f"Running imaginary-time cooling: {gs_cfg['steps']} steps "
-          f"× dt={gs_cfg['step_size']} = t_end={t_end:.1f} (recoil units)")
+    logger.info(f"Running imaginary-time cooling: {gs_cfg['steps']} steps "
+                f"× dt={gs_cfg['step_size']} = t_end={t_end:.1f} (recoil units)")
 
     rhs_imag = get_rhs(geo=geo, mode='imaginary', **rhs_kwargs)
     sol      = _solve(rhs_imag, psi0, t_span=(0.0, t_end), t_eval=[t_end])
@@ -216,7 +247,7 @@ def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir):
     out_path.mkdir(parents=True, exist_ok=True)
     gs_path  = out_path / _gs_filename(cfg)
     np.save(gs_path, psi_gs)
-    print(f"Ground state saved: {gs_path}")
+    logger.info(f"Ground state saved: {gs_path}")
 
     return psi_gs
 
@@ -397,7 +428,7 @@ def run(config_path,
     t_total   = sweep['total_time_ms'] * 1e-3 / d['t_unit']
     t_eval    = np.linspace(0.0, t_total, sim['t_frames'])
 
-    print(f"Real-time evolution: t_total={t_total:.2f}, frames={sim['t_frames']}")
+    logger.info(f"Real-time evolution: t_total={t_total:.2f}, frames={sim['t_frames']}")
 
     rhs_real = get_rhs(geo=geo, mode='real', **rhs_kwargs)
     sol   = _solve(rhs_real, psi0, t_span=(0.0, t_total), t_eval=t_eval)
@@ -413,7 +444,7 @@ def run(config_path,
     for name, data in observables.items():
         fpath = out_path / f"{stem}_{name}.npy"
         np.save(fpath, data)
-        print(f"Saved: {fpath}")
+        logger.info(f"Saved: {fpath}")
 
 
 if __name__ == '__main__':
@@ -456,7 +487,15 @@ Examples:
         help='Run imaginary-time cooling instead of real-time evolution. '
              'Saves the ground state to --out-dir and exits.'
     )
+    parser.add_argument(
+        '--verbose', action='store_true',
+        help='Enable DEBUG-level logging. Default is INFO'
+    )
     args = parser.parse_args()
+    _setup_logging(
+        log_file = Path(args.output_dir) / f"run_{Path(args.config).stem}.log",
+        verbose = args.verbose,
+    )
 
     run(
         config_path        = args.config,

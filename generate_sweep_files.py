@@ -21,6 +21,27 @@ import tomli_w                    # pip install tomli-w
 from itertools import product
 from pathlib import Path
 
+import logging
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# logging output file 
+# =============================================================================
+
+def _setup_logging(log_file=None, verbose=False):
+    level = logging.DEBUG if verbose else logging.INFO
+    fmt = "%(asctime)s  %(levelname)-8s  %(name)s — %(message)s"
+    datefmt = "%Y-%m-%d %H:%M:%S"
+
+    handlers = [logging.StreamHandler()]
+    if log_file is not None:
+        handlers.append(logging.FileHandler(log_file))
+    logging.basicConfig(level=level,
+                        format=fmt,
+                        datefmt=datefmt,
+                        handlers=handlers)
+
+
 
 # =============================================================================
 # Define the parameter sweep here
@@ -67,9 +88,9 @@ def generate_sweep(base_path, out_dir):
         for p in job_paths:
             f.write(str(p) + '\n')
 
-    print(f"Generated {len(job_paths)} job configs in {out_dir}/")
-    print(f"Job list written to {job_list}")
-    print(f"SLURM array range: 0-{len(job_paths)-1}")
+    logger.info(f"Generated {len(job_paths)} job configs in {out_dir}/")
+    logger.info(f"Job list written to {job_list}")
+    logger.info(f"SLURM array range: 0-{len(job_paths)-1}")
     return job_paths
 
 
@@ -84,4 +105,6 @@ if __name__ == '__main__':
     parser.add_argument('--base', default='configs/base.toml')
     parser.add_argument('--out',  default='configs/sweep')
     args = parser.parse_args()
+    _setup_logging()
+
     generate_sweep(args.base, args.out)

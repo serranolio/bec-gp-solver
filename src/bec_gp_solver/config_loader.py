@@ -45,7 +45,8 @@ from numpy import pi
 from pathlib import Path
 
 from bec_gp_solver.geometry import make_geometry
-
+import logging
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Derived quantities — separated so run_simulation.py can reuse them
@@ -259,16 +260,16 @@ def load_config(path):
 
     # print summary
     sweep = cfg['sweep']
-    print(f"Config loaded: {path.name}")
-    print(f"  geometry    : {geo_cfg['kind']}  "
-          f"nx={geo_cfg['nx']}, ny={geo_cfg['ny']}, nz={geo_cfg['nz']}")
-    print(f"  box sizes   : lx={d['lx']:.5f}, ly={d['ly']:.5f}, lz={d['lz']:.5f}  (recoil units)")
-    print(f"  TF radii    : rx={d['rx']:.5f}, ry={d['ry']:.5f}, rz={d['rz']:.5f}")
-    print(f"  mu          : {d['mu']:.4f}")
-    print(f"  sample      : {sweep['sample']}")
-    print(f"  ramp time   : {sweep['ramp_time_ms']} ms")
-    print(f"  delta       : {sweep['delta_start_hz']} → {sweep['delta_end_hz']} Hz")
-    print(f"  omega_l     : {sweep['omega_l_start']} → {sweep['omega_l_end']}")
+    logger.info(f"Config loaded: {path.name}")
+    logger.info(f"  geometry    : {geo_cfg['kind']}  "
+                f"nx={geo_cfg['nx']}, ny={geo_cfg['ny']}, nz={geo_cfg['nz']}")
+    logger.info(f"  box sizes   : lx={d['lx']:.5f}, ly={d['ly']:.5f}, lz={d['lz']:.5f}  (recoil units)")
+    logger.info(f"  TF radii    : rx={d['rx']:.5f}, ry={d['ry']:.5f}, rz={d['rz']:.5f}")
+    logger.info(f"  mu          : {d['mu']:.4f}")
+    logger.info(f"  sample      : {sweep['sample']}")
+    logger.info(f"  ramp time   : {sweep['ramp_time_ms']} ms")
+    logger.info(f"  delta       : {sweep['delta_start_hz']} → {sweep['delta_end_hz']} Hz")
+    logger.info(f"  omega_l     : {sweep['omega_l_start']} → {sweep['omega_l_end']}")
 
     rhs_kwargs = dict(
         n_components     = d['n_comp'],
