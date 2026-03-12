@@ -266,7 +266,6 @@ class TestRampCallables:
         delta_fn = rhs_kwargs['detuning']
         expected = cfg['sweep']['delta_start_hz'] / d['f_recoil']
         # detuning returns a per-component array: check component 0
-        print(delta_fn(0))
         assert abs(float(delta_fn(0.0)) - expected) < 1e-10
 
     def test_detuning_saturates_after_ramp(self, geo_and_kwargs, cfg, d):
