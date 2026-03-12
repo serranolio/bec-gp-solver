@@ -22,9 +22,14 @@ sigma_z      = [-1.0, 1.0]
 q_zeeman_hz  = [0.0, 0.0]  # Hz
 
 # scattering length matrix in units of a_si
+#a_matrix = [
+#    [100.40, 100.41],
+#    [100.41, 100.86],
+#]
+
 a_matrix = [
-    [100.40, 100.41],
-    [100.41, 100.86],
+    [100.40, 100.40],
+    [100.40, 100.40]
 ]
 
 # =============================================================================
@@ -76,8 +81,8 @@ observables = ["wavefunction"]
 # =============================================================================
 [sweep]
 sample         = 1
-ramp_time_ms   = 4.0
-total_time_ms  = 30.0
+ramp_time_ms   = 80.0
+total_time_ms  = 200.0
 delta_start_hz = 0.0
 delta_end_hz   = 0.0
 omega_l_start  = 0.9
