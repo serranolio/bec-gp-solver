@@ -110,6 +110,35 @@ def _gs_filename(cfg):
     return name
 
 
+def _find_ground_state(cfg, gs_dir):
+    """
+    Locate a cached ground state in gs_dir by reconstructing its exact filename.
+
+    The filename is derived from the same hash used by run_imaginary_time(),
+    so any config with identical initial physics will resolve to the same file.
+
+    Parameters
+    ----------
+    cfg    : raw config dict
+    gs_dir : str or Path
+
+    Returns
+    -------
+    Path to the ground state file.
+
+    Raises
+    ------
+    FileNotFoundError : if the expected file does not exist in gs_dir.
+    """
+    gs_path = Path(gs_dir) / _gs_filename(cfg)
+    if not gs_path.exists():
+        raise FileNotFoundError(
+            f"Ground state not found: '{gs_path}'. "
+            f"Run the ground state sweep (submit_gs.sh) first."
+        )
+    return gs_path
+
+
 def _thomas_fermi_initial_state(cfg, geo):
     """Thomas-Fermi density profile as initial guess for imaginary-time cooling."""
     d      = _compute_derived(cfg)
@@ -347,6 +376,7 @@ def build_output_stem(cfg):
 
 def run(config_path,
         output_dir='output',
+        gs_dir=None,
         initial_state_path=None,
         imag=False):
     """
@@ -355,16 +385,20 @@ def run(config_path,
     Parameters
     ----------
     config_path        : str or Path — TOML config file
-    out_dir            : str or Path — directory for all output files
+    output_dir         : str or Path — directory for all output files
+    gs_dir             : str or Path or None
+                         Directory containing cached ground states produced by
+                         --imag runs. If provided and initial_state_path is
+                         None, the ground state is located automatically by
+                         reconstructing its filename from the config.
     initial_state_path : str or Path or None
-                         Path to a .npy wavefunction to use as the starting
-                         state. For real-time runs this is the state that gets
-                         evolved. For imaginary-time runs (imag=True) this is
-                         the first guess for cooling. If None, a Thomas-Fermi
-                         profile is used.
+                         Explicit path to a .npy wavefunction. Takes priority
+                         over gs_dir. For --imag runs this is the first guess
+                         for cooling. If both are None, a Thomas-Fermi profile
+                         is used.
     imag               : bool
                          If True, run imaginary-time cooling and save the
-                         ground state to out_dir, then exit.
+                         ground state to output_dir, then exit.
                          If False (default), run real-time evolution.
     """
     config_path = Path(config_path)
@@ -376,6 +410,10 @@ def run(config_path,
     geo, rhs_kwargs = load_config(config_path)
 
     d = _compute_derived(cfg)
+
+    # --- resolve initial state ---
+    if initial_state_path is None and gs_dir is not None and not imag:
+        initial_state_path = _find_ground_state(cfg, gs_dir)
 
     # --- prepare initial state ---
     psi0 = prepare_initial_state(cfg, geo, initial_state_path)
@@ -446,9 +484,17 @@ Examples:
     )
     parser.add_argument(
         '--initial-state', default=None, dest='initial_state',
-        help='Path to a .npy wavefunction to use as the initial state. '
-             'For --imag runs this is the first guess for cooling. '
-             'If omitted, a Thomas-Fermi profile is used.'
+        help='Explicit path to a .npy wavefunction to use as the initial '
+             'state. Takes priority over --gs-dir. For --imag runs this is '
+             'the first guess for cooling. If omitted, a Thomas-Fermi profile '
+             'is used.'
+    )
+    parser.add_argument(
+        '--gs-dir', default=None, dest='gs_dir',
+        help='Directory containing cached ground states produced by --imag '
+             'runs. The matching file is found automatically from the config '
+             'parameters. Ignored if --initial-state is provided or --imag '
+             'is set.'
     )
     parser.add_argument(
         '--output-dir', default='output', dest='output_dir',
@@ -472,6 +518,7 @@ Examples:
     run(
         config_path        = args.config,
         output_dir         = args.output_dir,
+        gs_dir             = args.gs_dir,
         initial_state_path = args.initial_state,
         imag               = args.imag,
     )
