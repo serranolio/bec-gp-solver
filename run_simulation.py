@@ -34,37 +34,9 @@ from scipy.integrate import solve_ivp
 
 from bec_gp_solver.config_loader import load_config, _compute_derived
 from bec_gp_solver.gp_equation   import get_rhs
+from bec_gp_solver._logging       import setup_logging
 import logging
 logger = logging.getLogger(__name__)
-
-# =============================================================================
-# logging output file
-# =============================================================================
-
-def _setup_logging(log_file=None, verbose=False):
-    """
-      Configure the root logger for a simulation run.
-
-      Parameters
-      ----------
-      log_file : str or Path or None
-          If given, also write all log output to this file.
-          Intended for SLURM runs: pass a per-job path derived from
-          the config filename or SLURM_ARRAY_TASK_ID.
-      verbose : bool
-          If True, set level to DEBUG. Default is INFO.
-    """
-    level = logging.DEBUG if verbose else logging.INFO
-    fmt = "%(asctime)s  %(levelname)-8s  %(name)s — %(message)s"
-    datefmt = "%Y-%m-%d %H:%M:%S"
-
-    handlers = [logging.StreamHandler()]
-    if log_file is not None:
-        handlers.append(logging.FileHandler(log_file))
-    logging.basicConfig(level=level,
-                        format=fmt,
-                        datefmt=datefmt,
-                        handlers=handlers)
 
 
 # =============================================================================
@@ -492,9 +464,9 @@ Examples:
         help='Enable DEBUG-level logging. Default is INFO'
     )
     args = parser.parse_args()
-    _setup_logging(
+    setup_logging(
         log_file = Path(args.output_dir) / f"run_{Path(args.config).stem}.log",
-        verbose = args.verbose,
+        verbose  = args.verbose,
     )
 
     run(

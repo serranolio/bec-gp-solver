@@ -22,24 +22,8 @@ from itertools import product
 from pathlib import Path
 
 import logging
+from bec_gp_solver._logging import setup_logging
 logger = logging.getLogger(__name__)
-
-# =============================================================================
-# logging output file 
-# =============================================================================
-
-def _setup_logging(log_file=None, verbose=False):
-    level = logging.DEBUG if verbose else logging.INFO
-    fmt = "%(asctime)s  %(levelname)-8s  %(name)s — %(message)s"
-    datefmt = "%Y-%m-%d %H:%M:%S"
-
-    handlers = [logging.StreamHandler()]
-    if log_file is not None:
-        handlers.append(logging.FileHandler(log_file))
-    logging.basicConfig(level=level,
-                        format=fmt,
-                        datefmt=datefmt,
-                        handlers=handlers)
 
 
 
@@ -105,6 +89,6 @@ if __name__ == '__main__':
     parser.add_argument('--base', default='configs/base.toml')
     parser.add_argument('--out',  default='configs/sweep')
     args = parser.parse_args()
-    _setup_logging()
+    setup_logging()
 
     generate_sweep(args.base, args.out)
