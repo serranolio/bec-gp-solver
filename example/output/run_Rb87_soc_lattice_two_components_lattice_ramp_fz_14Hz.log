@@ -1,0 +1,30 @@
+2026-03-12 09:25:20  INFO      bec_gp_solver.geometry — Setting geometry to 3d_axial
+2026-03-12 09:25:20  INFO      bec_gp_solver.geometry — Building radial kinetic energy matrix …
+2026-03-12 09:25:20  INFO      bec_gp_solver.geometry — Done.
+2026-03-12 09:25:20  INFO      bec_gp_solver.config_loader — Config loaded: Rb87_soc_lattice_two_components_lattice_ramp_fz_14Hz.toml
+2026-03-12 09:25:20  INFO      bec_gp_solver.config_loader —   geometry    : 3d_axial  nx=64, ny=0, nz=1024
+2026-03-12 09:25:20  INFO      bec_gp_solver.config_loader —   box sizes   : lx=35.96337, ly=0.00000, lz=689.78826  (recoil units)
+2026-03-12 09:25:20  INFO      bec_gp_solver.config_loader —   TF radii    : rx=23.97558, ry=21.28130, rz=301.89187
+2026-03-12 09:25:20  INFO      bec_gp_solver.config_loader —   mu          : 1.1617
+2026-03-12 09:25:20  INFO      bec_gp_solver.config_loader —   sample      : 1
+2026-03-12 09:25:20  INFO      bec_gp_solver.config_loader —   ramp time   : 80.0 ms
+2026-03-12 09:25:20  INFO      bec_gp_solver.config_loader —   delta       : 0.0 → 0.0 Hz
+2026-03-12 09:25:20  INFO      bec_gp_solver.config_loader —   omega_l     : 0.9 → 0.3
+2026-03-12 09:25:20  INFO      __main__ — No initial state provided — using Thomas-Fermi profile.
+2026-03-12 09:25:20  INFO      __main__ — Running imaginary-time cooling: 50000 steps × dt=0.02 = t_end=1000.0 (recoil units)
+2026-03-12 09:42:58  INFO      __main__ — Ground state saved: example/ground_states/gs_delta_0hz_omega_0.90_1998b50ab6.npy
+2026-03-12 11:12:52  INFO      bec_gp_solver.geometry — Setting geometry to 3d_axial
+2026-03-12 11:12:52  INFO      bec_gp_solver.geometry — Building radial kinetic energy matrix …
+2026-03-12 11:12:52  INFO      bec_gp_solver.geometry — Done.
+2026-03-12 11:12:52  INFO      bec_gp_solver.config_loader — Config loaded: Rb87_soc_lattice_two_components_lattice_ramp_fz_14Hz.toml
+2026-03-12 11:12:52  INFO      bec_gp_solver.config_loader —   geometry    : 3d_axial  nx=64, ny=0, nz=1024
+2026-03-12 11:12:52  INFO      bec_gp_solver.config_loader —   box sizes   : lx=35.96337, ly=0.00000, lz=689.78826  (recoil units)
+2026-03-12 11:12:52  INFO      bec_gp_solver.config_loader —   TF radii    : rx=23.97558, ry=21.28130, rz=301.89187
+2026-03-12 11:12:52  INFO      bec_gp_solver.config_loader —   mu          : 1.1617
+2026-03-12 11:12:52  INFO      bec_gp_solver.config_loader —   sample      : 1
+2026-03-12 11:12:52  INFO      bec_gp_solver.config_loader —   ramp time   : 4.0 ms
+2026-03-12 11:12:52  INFO      bec_gp_solver.config_loader —   delta       : 0.0 → 0.0 Hz
+2026-03-12 11:12:52  INFO      bec_gp_solver.config_loader —   omega_l     : 0.9 → 0.3
+2026-03-12 11:12:52  INFO      __main__ — Loading initial state from: example/ground_states/gs_delta_0hz_omega_0.90_1998b50ab6.npy
+2026-03-12 11:12:52  INFO      __main__ — Real-time evolution: t_total=246.30, frames=201
+2026-03-12 11:31:57  INFO      __main__ — Saved: example/output/sample_1_ramp_4ms_di_0hz_df_0hz_omli_0.90_omlf_0.30_wavefunction.npy

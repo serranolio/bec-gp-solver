@@ -1,0 +1,89 @@
+# base.toml
+# Fixed physical parameters shared across all simulations in a sweep.
+# The sweep script copies this file and adds/overrides the [sweep] section.
+# All frequencies in Hz, times in ms, lengths in recoil units.
+
+# =============================================================================
+# Physical constants
+# =============================================================================
+[constants]
+m_ua     = 86.909187
+hbar_si  = 1.054571800139113e-34
+a_si     = 5.2917721067e-11
+f_recoil = 1960.0            # Hz
+
+# =============================================================================
+# System
+# =============================================================================
+[system]
+n_atoms      = 386738
+n_components = 2
+sigma_z      = [-1.0, 1.0]
+q_zeeman_hz  = [0.0, 0.0]  # Hz
+
+# scattering length matrix in units of a_si
+#a_matrix = [
+#    [100.40, 100.41],
+#    [100.41, 100.86],
+#]
+
+a_matrix = [
+    [100.40, 100.40],
+    [100.40, 100.40]
+]
+
+# =============================================================================
+# Trap
+# =============================================================================
+[trap]
+fx = 176.22   # Hz
+fy = 198.53   # Hz
+fz = 13.995   # Hz
+
+# =============================================================================
+# Spin-orbit coupling
+# =============================================================================
+[spin_orbit]
+omega_r = 2.7
+
+# =============================================================================
+# Geometry
+# =============================================================================
+[geometry]
+kind         = "3d_axial"
+nx           = 64
+ny           = 0            # unused for 3d_axial and 2d_cart
+nz           = 1024
+lx_rx_factor = 1.5
+ly_ry_factor = 0.0          # unused for 3d_axial and 2d_cart
+lz_rz_factor = 2.3
+
+# =============================================================================
+# Ground state cooling (imaginary time)
+# =============================================================================
+[ground_state]
+steps     = 50000
+step_size = 0.02      # recoil units
+
+# =============================================================================
+# Real-time simulation
+# =============================================================================
+[simulation]
+t_frames    = 201     # number of output frames
+twa_noise   = true   # add TWA quantum noise to initial state
+
+# Which observables to save — add/remove entries as needed.
+# Supported: "polarization", "populations", "wavefunction", "momentum_density"
+observables = ["wavefunction"]
+
+# =============================================================================
+# Sweep parameters (overridden per job by generate_sweep.py)
+# =============================================================================
+[sweep]
+sample         = 1
+ramp_time_ms   = 4.0
+total_time_ms  = 20.0
+delta_start_hz = 0.0
+delta_end_hz   = 0.0
+omega_l_start  = 0.9
+omega_l_end    = 0.3
