@@ -1,38 +1,32 @@
 #!/bin/bash
 #SBATCH --partition=kamiak
-#SBATCH --job-name=kzm_sweep_ramp_times
+#SBATCH --job-name=kzm_ground_states
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
-#SBATCH --mail-type=ALL
+#SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=federico.serrano@wsu.edu
-#SBATCH --time=0-03:00:00
+#SBATCH --time=0-06:00:00
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 
-# Array range is set dynamically by submit.sh — do not call sbatch directly.
-##SBATCH --array=0-19
+# Array range is set dynamically by submit_gs.sh — do not call sbatch directly.
+##SBATCH --array=0-9
 
 # --- paths ---
-JOB_LIST="configs/sweep/job_list.txt"
-OUTPUT_DIR="output"
+JOB_LIST="configs/sweep/gs_job_list.txt"
 GS_DIR="ground_states"
 
 # --- environment ---
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "$GS_DIR"
 source ~/.bashrc
 pixi run python --version
 
 # --- map SLURM task ID to config file ---
 if [ ! -f "$JOB_LIST" ]; then
     echo "ERROR: $JOB_LIST not found. Run generate_sweep_files.py first."
-    exit 1
-fi
-
-if [ ! -d "$GS_DIR" ] || [ -z "$(ls -A $GS_DIR)" ]; then
-    echo "ERROR: $GS_DIR is empty or missing. Run submit_gs.sh first."
     exit 1
 fi
 
@@ -43,10 +37,10 @@ if [ -z "$CONFIG" ]; then
     exit 1
 fi
 
-echo "Task ${SLURM_ARRAY_TASK_ID}: running config ${CONFIG}"
+echo "Task ${SLURM_ARRAY_TASK_ID}: computing ground state for ${CONFIG}"
 
-# --- run ---
+# --- run imaginary-time cooling ---
 srun pixi run python run_simulation.py \
     --config     "$CONFIG" \
-    --output-dir "$OUTPUT_DIR" \
-    --gs-dir     "$GS_DIR"
+    --output-dir "$GS_DIR" \
+    --imag
