@@ -9,9 +9,11 @@ Usage
 -----
     python generate_sweep.py --base configs/base.toml --out configs/sweep/
 
-The script prints the number of jobs generated and the path to a
-job_list.txt file that jobscript.sh reads to map SLURM_ARRAY_TASK_ID
-to config file paths.
+Two index files are written to --out:
+  job_list.txt     — one line per config (all jobs, for submit.sh)
+  gs_job_list.txt  — one line per unique (delta_start_hz, omega_l_start)
+                     pair (for submit_gs.sh; avoids redundant ground-state
+                     computations when only ramp_time or sample varies)
 """
 
 import argparse
@@ -32,8 +34,8 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 SWEEP = {
-    'ramp_time_ms'   : list(range(10, 110, 10)),
-    'total_time_ms'  : [10.0],
+    'ramp_time_ms'   : [4.0, 10.0, 40.0, 80.0, 150.0],
+    'total_time_ms'  : [500.0],
     'delta_start_hz' : [0.0],
     'delta_end_hz'   : [0.0],
     'omega_l_start'  : [0.9],
@@ -54,11 +56,15 @@ def generate_sweep(base_path, out_dir):
     values = list(SWEEP.values())
 
     job_paths = []
+    gs_job_paths = []          # one entry per unique (delta_start_hz, omega_l_start)
+    seen_gs_keys = set()
+
     for i, combo in enumerate(product(*values)):
         cfg = _deep_copy(base_cfg)
 
         # override sweep section
-        for key, val in zip(keys, combo):
+        params = dict(zip(keys, combo))
+        for key, val in params.items():
             cfg['sweep'][key] = val
 
         job_path = out_dir / f'job_{i:04d}.toml'
@@ -66,15 +72,31 @@ def generate_sweep(base_path, out_dir):
             tomli_w.dump(cfg, f)
         job_paths.append(job_path)
 
-    # write job list for jobscript.sh
+        # deduplicate ground-state jobs by initial conditions only
+        gs_key = (params['delta_start_hz'], params['omega_l_start'])
+        if gs_key not in seen_gs_keys:
+            seen_gs_keys.add(gs_key)
+            gs_job_paths.append(job_path)
+
+    # write full job list for submit.sh / jobscript.sh
     job_list = out_dir / 'job_list.txt'
     with open(job_list, 'w') as f:
         for p in job_paths:
             f.write(str(p) + '\n')
 
+    # write deduplicated ground-state job list for submit_gs.sh / jobscript_gs.sh
+    gs_job_list = out_dir / 'gs_job_list.txt'
+    with open(gs_job_list, 'w') as f:
+        for p in gs_job_paths:
+            f.write(str(p) + '\n')
+
     logger.info(f"Generated {len(job_paths)} job configs in {out_dir}/")
     logger.info(f"Job list written to {job_list}")
     logger.info(f"SLURM array range: 0-{len(job_paths)-1}")
+    logger.info(
+        f"Ground-state job list written to {gs_job_list} "
+        f"({len(gs_job_paths)} unique initial condition(s))"
+    )
     return job_paths
 
 
