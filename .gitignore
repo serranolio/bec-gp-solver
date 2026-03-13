@@ -19,3 +19,4 @@ htmlcov/
 *.npy
 *.data
 *.out
+example/
