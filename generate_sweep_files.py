@@ -40,7 +40,7 @@ SWEEP = {
     'delta_end_hz'   : [0.0],
     'omega_l_start'  : [0.9],
     'omega_l_end'    : [0.3],
-    'sample'         : list(range(10)),
+    'sample'         : [1],
 }
 
 def generate_sweep(base_path, out_dir):
