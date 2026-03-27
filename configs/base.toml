@@ -32,9 +32,10 @@ a_matrix = [
 # Trap
 # =============================================================================
 [trap]
-fx = 176.22   # Hz
-fy = 198.53   # Hz
-fz = 27.99    # Hz
+fx = 176.22        # Hz
+fy = 198.53        # Hz
+fz = 27.99         # Hz
+homogeneous = false # if true, trap potential is set to zero
 
 # =============================================================================
 # Spin-orbit coupling
