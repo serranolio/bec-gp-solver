@@ -17,7 +17,16 @@
 #    Wait for all ground state jobs to complete before continuing.
 # 5. Run:  bash submit.sh
 
-JOB_LIST="configs/sweep/gs_job_list.txt"
+SWEEP_DIR="configs/sweep"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --sweep-dir) SWEEP_DIR="$2"; shift 2 ;;
+        *) echo "Unknown argument: $1"; exit 1 ;;
+    esac
+done
+
+JOB_LIST="${SWEEP_DIR}/gs_job_list.txt"
 
 if [ ! -f "$JOB_LIST" ]; then
     echo "ERROR: $JOB_LIST not found. Run generate_sweep_files.py first."
@@ -29,4 +38,4 @@ N=$(( $(wc -l < "$JOB_LIST") - 1 ))
 mkdir -p logs
 
 echo "Submitting ground state sweep: $((N+1)) tasks (--array=0-${N})"
-sbatch --array=0-"${N}" jobscript_gs.sh
+sbatch --array=0-"${N}" --export=ALL,SWEEP_DIR="${SWEEP_DIR}" jobscript_gs.sh

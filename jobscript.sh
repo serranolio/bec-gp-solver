@@ -16,7 +16,8 @@
 ## SBATCH --array=0-4
 
 # --- paths ---
-JOB_LIST="configs/sweep/job_list.txt"
+SWEEP_DIR="${SWEEP_DIR:-configs/sweep}"
+JOB_LIST="${SWEEP_DIR}/job_list.txt"
 OUTPUT_DIR="output"
 GS_DIR="ground_states"
 

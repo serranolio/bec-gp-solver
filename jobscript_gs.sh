@@ -16,7 +16,8 @@
 ##SBATCH --array=0-9
 
 # --- paths ---
-JOB_LIST="configs/sweep/gs_job_list.txt"
+SWEEP_DIR="${SWEEP_DIR:-configs/sweep}"
+JOB_LIST="${SWEEP_DIR}/gs_job_list.txt"
 GS_DIR="ground_states"
 
 # --- environment ---
