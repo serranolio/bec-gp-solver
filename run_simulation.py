@@ -144,7 +144,7 @@ def _thomas_fermi_initial_state(cfg, geo):
     d      = _compute_derived(cfg)
     n_comp = cfg['system']['n_components']
 
-    r_, z_ = geo.grids
+    #r_, z_ = geo.grids
     if geo.basis=="3d_axial":
         active_freqs = [np.sqrt(d['wx']*d['wy']), d['wz']]
     else:
