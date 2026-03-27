@@ -20,3 +20,6 @@ htmlcov/
 *.data
 *.out
 example/
+configs/sweep
+ground_states
+logs
