@@ -9,7 +9,7 @@
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=10
 #SBATCH --mem=4G
 
 # Array range is set dynamically by submit_gs.sh — do not call sbatch directly.

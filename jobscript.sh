@@ -3,17 +3,17 @@
 #SBATCH --job-name=kzm_sweep_ramp_times
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
-#SBATCH --mail-type=ALL
+#SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=federico.serrano@wsu.edu
-#SBATCH --time=0-03:00:00
+#SBATCH --time=0-24:00:00
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=2G
 
 # Array range is set dynamically by submit.sh — do not call sbatch directly.
-##SBATCH --array=0-19
+## SBATCH --array=0-4
 
 # --- paths ---
 JOB_LIST="configs/sweep/job_list.txt"
