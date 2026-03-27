@@ -284,6 +284,7 @@ def load_config(path):
         wz               = d['wz'],
         lattice_strength = lattice_strength,
         k_l              = d['k_l'],
+        homogeneous      = cfg['trap'].get('homogeneous', False),
     )
 
     return geo, rhs_kwargs

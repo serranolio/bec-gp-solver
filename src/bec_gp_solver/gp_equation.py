@@ -124,7 +124,7 @@ def _H_interaction(psi, g_matrix, n_atoms):
 
 def get_rhs(geo, n_components, sigma_z, detuning, q_zeeman, omega_r,
             g_matrix, n_atoms, wx=0.0, wy=0.0, wz=0.0,
-            lattice_strength=0.0, k_l=0.0, mode='real'):
+            lattice_strength=0.0, k_l=0.0, mode='real', homogeneous=False):
     """
     Build and return the RHS function rhs(t, psi) for the GP equation.
 
@@ -146,6 +146,8 @@ def get_rhs(geo, n_components, sigma_z, detuning, q_zeeman, omega_r,
     lattice_strength : float or callable(t) -> float
     k_l              : float — lattice wavevector
     mode             : 'real' or 'imaginary'
+    homogeneous      : bool — if True, set the trap potential to zero
+                       (lattice is unaffected); default False
 
     Returns
     -------
@@ -159,7 +161,7 @@ def get_rhs(geo, n_components, sigma_z, detuning, q_zeeman, omega_r,
     _q_zeeman = np.asarray(q_zeeman)
     _Omega    = _build_rabi_matrix(n_components, omega_r)
     _g_matrix = np.asarray(g_matrix)
-    _V_trap   = _build_trap_potential(geo, wx, wy, wz)
+    _V_trap   = np.zeros_like(geo.dv) if homogeneous else _build_trap_potential(geo, wx, wy, wz)
     _dv       = geo.dv
 
     # --- resolve delta and V_lattice into plain callables ---
