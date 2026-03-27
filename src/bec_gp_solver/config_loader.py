@@ -120,11 +120,11 @@ def _compute_derived(cfg):
 
     elif geometry_kind == '2d_cart':
         ratio    = a_matrix / (100.4 * a_si / l_unit)
-        g_matrix = 4/3 * (mu * ratio**(2/5))**2 / (wx * wy)
+        g_matrix = 4/3 * (mu * ratio**(2/5))**2 / (wx * wy) / n_atoms
 
     elif geometry_kind == '1d_cart':
         ratio    = a_matrix / (100.4 * a_si / l_unit)
-        g_matrix = 8/3 * (mu * ratio**(2/5))**(3/2) / wz
+        g_matrix = 8/3 * (mu * ratio**(2/5))**(3/2) / wz / n_atoms
 
     else:
         raise ValueError(f"Unknown geometry kind '{geometry_kind}'")
