@@ -277,12 +277,12 @@ def add_twa_noise(psi_gs, geo, n_atoms, n_comp, sample):
     n_comp : int
     sample : int — noise realisation index; 0 means no noise
     """
-    N_total  = geo.dv.shape[0]
-    kr_, kz_ = geo.kgrids                          # both shape (nx, nz)
+    N_total = geo.dv.shape[0]
 
     # de-aliasing mask: keep modes inside 2/3 of the maximum |k| radius
-    k2   = kr_**2 + kz_**2
-    mask = (k2 <= k2.max() * (2.0 / 3.0)**2).reshape(N_total)
+    # sum over all momentum-grid components, works for 1d/2d/3d_cart and 3d_axial
+    k2   = sum(k**2 for k in geo.kgrids).reshape(N_total)
+    mask = (k2 <= k2.max() * (2.0 / 3.0)**2)
 
     # generate noise in k-space, one row per component
     noise_k = (
