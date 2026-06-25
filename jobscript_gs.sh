@@ -40,8 +40,17 @@ fi
 
 echo "Task ${SLURM_ARRAY_TASK_ID}: computing ground state for ${CONFIG}"
 
+# --- optional initial state (first guess for cooling) ---
+# INITIAL_STATE is exported by submit_gs.sh; empty means Thomas-Fermi default.
+EXTRA_ARGS=()
+if [ -n "${INITIAL_STATE:-}" ]; then
+    echo "Using initial state: ${INITIAL_STATE}"
+    EXTRA_ARGS+=(--initial-state "${INITIAL_STATE}")
+fi
+
 # --- run imaginary-time cooling ---
 srun pixi run python run_simulation.py \
     --config     "$CONFIG" \
     --output-dir "$GS_DIR" \
-    --imag
+    --imag \
+    "${EXTRA_ARGS[@]}"
