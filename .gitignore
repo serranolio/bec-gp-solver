@@ -26,6 +26,6 @@ logs
 
 # Specific configuration files
 configs/Rb87_soc_lattice_two_components_lattice_ramp_1d_hom.toml
-
+configs/Rb87_soc_lattice_two_components_lattice_ramp_fz_14Hz_1d_hom.toml
 # output directory
 output
