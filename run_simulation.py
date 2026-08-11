@@ -101,11 +101,13 @@ def _gs_cache_key(cfg):
 
 
 def _gs_filename(cfg):
-    sweep = cfg['sweep']
-    key   = _gs_cache_key(cfg)
+    sweep   = cfg['sweep']
+    omega_r = cfg['spin_orbit']['omega_r']
+    key     = _gs_cache_key(cfg)
     name  = (f"gs"
              f"_delta_{sweep['delta_start_hz']:.2f}hz"
-             f"_omega_{sweep['omega_l_start']:.2f}"
+             f"_omegaL_{sweep['omega_l_start']:.2f}"
+             f"_omegaR_{omega_r:.2f}"
              f"_{key}.npy")
     return name
 
