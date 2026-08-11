@@ -9,11 +9,17 @@ Usage
 -----
     python generate_sweep.py --base configs/base.toml --out configs/sweep/
 
+Most sweep parameters live in the [sweep] section of the config. A few
+physical parameters live elsewhere (e.g. omega_r in [spin_orbit]); these can
+still be swept by declaring their section in SECTION_OF below.
+
 Two index files are written to --out:
   job_list.txt     — one line per config (all jobs, for submit.sh)
-  gs_job_list.txt  — one line per unique (delta_start_hz, omega_l_start)
-                     pair (for submit_gs.sh; avoids redundant ground-state
-                     computations when only ramp_time or sample varies)
+  gs_job_list.txt  — one line per unique (delta_start_hz, omega_l_start,
+                     omega_r) combination (for submit_gs.sh; avoids redundant
+                     ground-state computations when only ramp_time or sample
+                     varies, while still recomputing when the ground state
+                     itself changes)
 """
 
 import argparse
@@ -41,6 +47,13 @@ SWEEP = {
     'omega_l_start'  : [0.9],
     'omega_l_end'    : [0.3],
     'sample'         : [1],
+    'omega_r'        : [2.7],
+}
+
+# Sweep keys default to the [sweep] section. Keys that live in a different
+# config section are listed here so the override lands in the right place.
+SECTION_OF = {
+    'omega_r' : 'spin_orbit',
 }
 
 def generate_sweep(base_path, out_dir):
@@ -62,18 +75,25 @@ def generate_sweep(base_path, out_dir):
     for i, combo in enumerate(product(*values)):
         cfg = _deep_copy(base_cfg)
 
-        # override sweep section
+        # override the relevant section for each swept parameter
         params = dict(zip(keys, combo))
         for key, val in params.items():
-            cfg['sweep'][key] = val
+            section = SECTION_OF.get(key, 'sweep')
+            cfg[section][key] = val
 
         job_path = out_dir / f'job_{i:04d}.toml'
         with open(job_path, 'wb') as f:
             tomli_w.dump(cfg, f)
         job_paths.append(job_path)
 
-        # deduplicate ground-state jobs by initial conditions only
-        gs_key = (params['delta_start_hz'], params['omega_l_start'])
+        # Deduplicate ground-state jobs by the parameters that determine the
+        # ground state. Read from cfg (not params) so values fall back to the
+        # base config when a parameter is not being swept.
+        gs_key = (
+            cfg['sweep']['delta_start_hz'],
+            cfg['sweep']['omega_l_start'],
+            cfg['spin_orbit']['omega_r'],
+        )
         if gs_key not in seen_gs_keys:
             seen_gs_keys.add(gs_key)
             gs_job_paths.append(job_path)

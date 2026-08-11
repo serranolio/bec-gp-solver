@@ -270,6 +270,7 @@ def load_config(path):
     logger.info(f"  ramp time   : {sweep['ramp_time_ms']} ms")
     logger.info(f"  delta       : {sweep['delta_start_hz']} → {sweep['delta_end_hz']} Hz")
     logger.info(f"  omega_l     : {sweep['omega_l_start']} → {sweep['omega_l_end']}")
+    logger.info(f"  omega_r     : {d['omega_r']}")
 
     rhs_kwargs = dict(
         n_components     = d['n_comp'],
