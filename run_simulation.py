@@ -104,7 +104,7 @@ def _gs_filename(cfg):
     sweep = cfg['sweep']
     key   = _gs_cache_key(cfg)
     name  = (f"gs"
-             f"_delta_{sweep['delta_start_hz']:.0f}hz"
+             f"_delta_{sweep['delta_start_hz']:.2f}hz"
              f"_omega_{sweep['omega_l_start']:.2f}"
              f"_{key}.npy")
     return name
