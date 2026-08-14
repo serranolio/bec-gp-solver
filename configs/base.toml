@@ -62,6 +62,15 @@ lz_rz_factor = 2.5
 steps     = 50000
 step_size = 0.02      # recoil units
 
+# Initial guess for imaginary-time cooling (both optional).
+# initial_weights: per-component weights broadcast onto the Thomas-Fermi
+#   profile psi0 -> component k is seeded with initial_weights[k] * psi0.
+#   Length must equal system.n_components. Defaults to all ones ([psi0, psi0, ...]).
+# modulation: if true, imprint a plane-wave phase e^{-i k_l z} on component 0
+#   and e^{+i k_l z} on component 1 (stripe-like guess). Defaults to false.
+# initial_weights = [1.0, 1.0, 0.0]
+# modulation      = false
+
 # =============================================================================
 # Real-time simulation
 # =============================================================================

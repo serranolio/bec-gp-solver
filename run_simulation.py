@@ -142,9 +142,35 @@ def _find_ground_state(cfg, gs_dir):
 
 
 def _thomas_fermi_initial_state(cfg, geo):
-    """Thomas-Fermi density profile as initial guess for imaginary-time cooling."""
+    """Thomas-Fermi density profile as initial guess for imaginary-time cooling.
+
+    A Thomas-Fermi profile ``psi0`` is broadcast across the components and
+    scaled by per-component weights. Two optional keys in the
+    ``[ground_state]`` config section control the spinor structure:
+
+    initial_weights : list of float, length ``n_components`` (default all ones)
+        Component ``k`` is seeded with ``initial_weights[k] * psi0``. The
+        default ``[1, 1, ...]`` reproduces ``[psi0, psi0, ...]``.
+    modulation : bool (default False)
+        If True, imprint a plane-wave phase ``e^{-i k_l z}`` on component 0 and
+        ``e^{+i k_l z}`` on component 1 (stripe-like guess). Other components
+        are left unmodulated.
+
+    The result is not normalised here; ``prepare_initial_state`` renormalises.
+    """
     d      = _compute_derived(cfg)
     n_comp = cfg['system']['n_components']
+
+    gs_cfg     = cfg['ground_state']
+    weights    = gs_cfg.get('initial_weights', [1.0] * n_comp)
+    modulation = gs_cfg.get('modulation', False)
+
+    weights = np.asarray(weights, dtype=complex)
+    if weights.size != n_comp:
+        raise ValueError(
+            f"ground_state.initial_weights has {weights.size} entries but "
+            f"n_components={n_comp}."
+        )
 
     #r_, z_ = geo.grids
     if geo.basis=="3d_axial":
@@ -157,10 +183,17 @@ def _thomas_fermi_initial_state(cfg, geo):
     norm   = (geo.dv * np.abs(psi0)**2).sum()
     psi0  /= np.sqrt(norm)
 
-    # distribute equally across first two components, third empty
-    components = ([psi0 / np.sqrt(2)] * min(2, n_comp)
-                + [np.zeros_like(psi0)] * max(0, n_comp - 2))
-    return np.array(components).reshape(-1)
+    # broadcast the profile across components, scaled by the weights
+    components = weights[:, None] * psi0[None, :]
+
+    # optional plane-wave phase on components 0 and 1 only
+    if modulation:
+        z = geo.grids[-1].reshape(-1)
+        components[0] *= np.exp(-1j * d['k_l'] * z)
+        if n_comp > 1:
+            components[1] *= np.exp(1j * d['k_l'] * z)
+
+    return components.reshape(-1)
 
 
 def _renormalise(psi_gs, geo, n_comp):
