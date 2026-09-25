@@ -133,7 +133,9 @@ def _compute_derived(cfg):
     # 5. Spin-orbit coupling
     # ------------------------------------------------------------------
     omega_r = cfg['spin_orbit']['omega_r']
-    k_l     = np.sqrt(1 - (omega_r / 4)**2)
+    # For omega_r >= 4 the single-particle dispersion has a single minimum at
+    # k = 0, so the lattice wavevector vanishes.
+    k_l     = np.sqrt(1 - (omega_r / 4)**2) if omega_r < 4 else 0.0
 
     # ------------------------------------------------------------------
     # 6. Box sizes from Thomas-Fermi radii
@@ -143,11 +145,19 @@ def _compute_derived(cfg):
     ry = np.sqrt(4 * mu) / wy
     rz = np.sqrt(4 * mu) / wz
     
-    m_z = (geo_cfg['lz_rz_factor'] * rz) // (2*pi/k_l)
-
     lx = geo_cfg['lx_rx_factor'] * rx
     ly = geo_cfg['ly_ry_factor'] * ry
-    lz = (2*pi / k_l) * m_z
+
+    if k_l > 0:
+        # Commensurate box: lz is an integer number of lattice periods 2*pi/k_l.
+        lattice_period = 2*pi / k_l
+        # At least one full period, so a short Thomas-Fermi radius cannot
+        # floor the box down to lz = 0.
+        m_z = max((geo_cfg['lz_rz_factor'] * rz) // lattice_period, 1.0)
+        lz  = lattice_period * m_z
+    else:
+        # No lattice modulation (omega_r >= 4): nothing to commensurate with.
+        lz = geo_cfg['lz_rz_factor'] * rz
 
     return dict(
         # units
