@@ -40,6 +40,13 @@ from bec_gp_solver.geometry import Geometry3DAxial
 TOML_PATH = Path(__file__).parent.parent / "configs" / "setup_test_config.toml"
 
 
+def _with_omega_r(cfg, omega_r):
+    """Shallow copy of cfg with [spin_orbit].omega_r overridden."""
+    new = dict(cfg)
+    new['spin_orbit'] = dict(cfg['spin_orbit'], omega_r=omega_r)
+    return new
+
+
 @pytest.fixture(scope="module")
 def cfg():
     """Raw config dict, loaded once for the whole module."""
@@ -161,6 +168,12 @@ class TestSpinOrbit:
         """k_l must be in (0, 1] for physical spin-orbit coupling."""
         assert 0 < d['k_l'] <= 1.0
 
+    @pytest.mark.parametrize("omega_r", [4.0, 6.0])
+    def test_k_l_vanishes_above_threshold(self, cfg, omega_r):
+        """For omega_r >= 4 the dispersion minimum sits at k = 0, so k_l = 0."""
+        d = _compute_derived(_with_omega_r(cfg, omega_r))
+        assert d['k_l'] == 0.0
+
 
 # =============================================================================
 # Geometry: box sizes and lz quantisation
@@ -183,6 +196,22 @@ class TestGeometry:
 
     def test_lz_fits_at_least_one_period(self, d):
         assert d['lz'] >= 2 * pi / d['k_l']
+
+    def test_lz_never_floors_to_zero(self, cfg):
+        """
+        Just below threshold the lattice period is huge (k_l -> 0), so the
+        floor division would give m_z = 0. lz must still hold one period.
+        """
+        d0 = _compute_derived(_with_omega_r(cfg, 3.9999999))
+        lattice_period = 2 * pi / d0['k_l']
+        assert lattice_period > cfg['geometry']['lz_rz_factor'] * d0['rz']
+        assert abs(d0['lz'] - lattice_period) / lattice_period < 1e-10
+
+    def test_lz_without_lattice(self, cfg):
+        """With k_l = 0 there is nothing to commensurate with: lz = factor * rz."""
+        d0 = _compute_derived(_with_omega_r(cfg, 6.0))
+        expected = cfg['geometry']['lz_rz_factor'] * d0['rz']
+        assert abs(d0['lz'] - expected) / expected < 1e-10
 
     def test_ly_zero_for_axial(self, d, cfg):
         """ly_ry_factor = 0 in example_setup.toml so ly must be 0."""
