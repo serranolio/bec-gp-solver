@@ -32,7 +32,13 @@ if [ ! -f "$JOB_LIST" ]; then
     exit 1
 fi
 
-if [ ! -d "$GS_DIR" ] || [ -z "$(ls -A $GS_DIR)" ]; then
+# --- initial state: explicit file, or matching ground state from GS_DIR ---
+# INITIAL_STATE is exported by submit.sh; empty means look up GS_DIR.
+EXTRA_ARGS=()
+if [ -n "${INITIAL_STATE:-}" ]; then
+    echo "Using initial state: ${INITIAL_STATE}"
+    EXTRA_ARGS+=(--initial-state "${INITIAL_STATE}")
+elif [ ! -d "$GS_DIR" ] || [ -z "$(ls -A "$GS_DIR")" ]; then
     echo "ERROR: $GS_DIR is empty or missing. Run submit_gs.sh first."
     exit 1
 fi
@@ -50,4 +56,5 @@ echo "Task ${SLURM_ARRAY_TASK_ID}: running config ${CONFIG}"
 srun pixi run python run_simulation.py \
     --config     "$CONFIG" \
     --output-dir "$OUTPUT_DIR" \
-    --gs-dir     "$GS_DIR"
+    --gs-dir     "$GS_DIR" \
+    "${EXTRA_ARGS[@]}"
