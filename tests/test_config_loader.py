@@ -32,7 +32,8 @@ import numpy as np
 from numpy import pi
 import pytest
 
-from bec_gp_solver.config_loader import load_config, _compute_derived
+from bec_gp_solver.config_loader import (load_config, _compute_derived,
+                                        _build_lattice_ramp, _build_detuning_ramp)
 from bec_gp_solver.geometry import Geometry3DAxial
 
 
@@ -342,3 +343,23 @@ class TestRampCallables:
         """detuning must be a callable."""
         _, rhs_kwargs = geo_and_kwargs
         assert callable(rhs_kwargs['detuning'])
+
+    def test_zero_ramp_time_is_sudden_quench(self, cfg, d):
+        """ramp_time_ms = 0 must not divide by zero: start at t=0, end for t>0."""
+        new = dict(cfg)
+        new['sweep'] = dict(cfg['sweep'], ramp_time_ms=0.0)
+        s = new['sweep']
+
+        lattice_fn  = _build_lattice_ramp(new, d['t_unit'])
+        detuning_fn = _build_detuning_ramp(new, d['t_unit'])
+
+        assert lattice_fn(0.0) == s['omega_l_start']
+        assert lattice_fn(1e-12) == s['omega_l_end']
+        assert detuning_fn(0.0) == s['delta_start_hz'] / d['f_recoil']
+        assert detuning_fn(1e-12) == s['delta_end_hz'] / d['f_recoil']
+
+    def test_negative_ramp_time_raises(self, cfg, d):
+        new = dict(cfg)
+        new['sweep'] = dict(cfg['sweep'], ramp_time_ms=-1.0)
+        with pytest.raises(ValueError):
+            _build_lattice_ramp(new, d['t_unit'])

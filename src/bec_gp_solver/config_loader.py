@@ -191,27 +191,41 @@ def _compute_derived(cfg):
 # Ramp builders — read start/end from [sweep], duration from [lattice]/[detuning]
 # =============================================================================
 
+def _linear_ramp(start, end, t_ramp):
+    """
+    Linear ramp start → end over t_ramp, saturating afterwards.
+
+    t_ramp == 0 is a sudden quench: the value is `start` at t <= 0 (so the
+    imaginary-time ground state, evaluated at t=0, uses the initial
+    parameters) and `end` for any t > 0.
+    """
+    if t_ramp < 0:
+        raise ValueError(f"ramp time must be non-negative, got {t_ramp}")
+    if t_ramp == 0:
+        return lambda t: start if t <= 0 else end
+
+    return lambda t: start + (end - start) * np.clip(t / t_ramp, 0.0, 1.0)
+
+
 def _build_lattice_ramp(cfg, t_unit):
     """
     Linear ramp: omega_l_start → omega_l_end over t_ramp_ms.
     Start/end come from [sweep].
-    Saturates after t_ramp.
+    Saturates after t_ramp; t_ramp_ms = 0 is a sudden quench.
     """
     sweep         = cfg['sweep']
     omega_l_start = sweep['omega_l_start']
     omega_l_end   = sweep['omega_l_end']
     t_ramp        = sweep['ramp_time_ms'] * 1e-3 / t_unit
 
-    return lambda t: (omega_l_start
-                      + (omega_l_end - omega_l_start)
-                      * np.clip(t / t_ramp, 0.0, 1.0))
+    return _linear_ramp(omega_l_start, omega_l_end, t_ramp)
 
 
 def _build_detuning_ramp(cfg, t_unit):
     """
     Linear ramp: delta_start_hz → delta_end_hz over t_ramp_ms.
     Start/end come from [sweep] in Hz and are converted to recoil units.
-    Saturates after t_ramp.
+    Saturates after t_ramp; t_ramp_ms = 0 is a sudden quench.
     """
     sweep       = cfg['sweep']
     f_recoil    = cfg['constants']['f_recoil']
@@ -219,9 +233,7 @@ def _build_detuning_ramp(cfg, t_unit):
     delta_end   = sweep['delta_end_hz']   / f_recoil
     t_ramp      = sweep['ramp_time_ms'] * 1e-3 / t_unit
 
-    return lambda t: (delta_start
-                      + (delta_end - delta_start)
-                      * np.clip(t / t_ramp, 0.0, 1.0))
+    return _linear_ramp(delta_start, delta_end, t_ramp)
 
 
 # =============================================================================
