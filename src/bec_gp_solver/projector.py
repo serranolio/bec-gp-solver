@@ -22,6 +22,7 @@ Projector(geo, dispersion, e_cut)     — callable, P(psi) -> projected psi
     .white_noise(rng, variance)       — Gaussian noise on the c-field modes
     .twa_noise(rng, n_atoms)          — Wigner vacuum: ½ quantum per mode
 soc_dispersion(sigma_z)               — dispersion matching gp_equation._H_sp
+mode_energies(geo, dispersion)        — dispersion on the spectral grid
 alias_free_cutoff(geo, dispersion)    — largest e_cut free of aliasing
 
 author: Federico Serrano
@@ -67,7 +68,7 @@ def soc_dispersion(sigma_z):
     return dispersion
 
 
-def _mode_energies(geo, dispersion):
+def mode_energies(geo, dispersion):
     """Dispersion evaluated on the spectral grid: (n_comp, *sizes)."""
     kgrids  = geo.spectral_kgrids
     k_perp2 = sum(k**2 for k in kgrids[:-1]) + np.zeros(geo.sizes)
@@ -80,7 +81,7 @@ def alias_free_cutoff(geo, dispersion):
     i.e. the lowest energy of any mode outside that half-box. Using it as
     e_cut gives a region with Projector.alias_free == True.
     """
-    energies = _mode_energies(geo, dispersion)
+    energies = mode_energies(geo, dispersion)
     outside  = np.zeros(geo.sizes, dtype=bool)
     for k in geo.spectral_kgrids:
         outside |= np.abs(k) > np.abs(k).max() / 2
@@ -124,7 +125,7 @@ class Projector:
     """
 
     def __init__(self, geo, dispersion, e_cut):
-        energies = _mode_energies(geo, dispersion)
+        energies = mode_energies(geo, dispersion)
         if energies.ndim != len(geo.sizes) + 1:
             raise ValueError(
                 f"dispersion must return shape (n_comp, *{geo.sizes}), "

@@ -16,6 +16,11 @@ Tests are grouped by function/concern:
   TestHSp                    — kinetic-only limit, diagonal terms, Rabi coupling
   TestGetRhs                 — ValueError, callable, shape, real vs imaginary mode,
                                time-dependent parameters, eigenstate properties
+  TestPGPE                   — projected rhs stays in the c-field; norm and
+                               energy conservation; projected imaginary time
+  TestEstimateMaxEnergy      — bound on the spectrum of the linear Hamiltonian
+  TestIPSplit                — L ψ + N(ψ) from get_ip_rhs equals get_rhs; RK4IP
+                               PGPE conserves norm/energy at large steps
 
 Run with:
     pytest tests/test_gp_equation.py -v
@@ -35,7 +40,11 @@ from bec_gp_solver.gp_equation import (
     _H_interaction,
     _H_sp,
     get_rhs,
+    get_ip_rhs,
+    estimate_max_energy,
 )
+from bec_gp_solver.projector import Projector, soc_dispersion
+from bec_gp_solver.integrators import integrate, LinearPropagator
 
 
 # =============================================================================
@@ -700,3 +709,229 @@ class TestGetRhs:
                       n_atoms=1000.0)
 
         assert rhs(0.0, psi).shape == psi.shape
+
+
+# =============================================================================
+# PGPE: get_rhs with a projector
+# =============================================================================
+
+def _pgpe_setup(e_cut=4.0, g=0.05, n_atoms=1000.0):
+    """1D spin-orbit system with trap, lattice, Rabi and interactions."""
+    geo    = GeometryCart(sizes=(128,), lengths=(20*pi,))    # k_max = 6.4
+    sigma  = np.array([1.0, -1.0])
+    kwargs = dict(n_components=2, sigma_z=sigma, detuning=0.3,
+                  q_zeeman=np.zeros(2), omega_r=0.5,
+                  g_matrix=g * np.array([[1.0, 0.9], [0.9, 1.0]]),
+                  n_atoms=n_atoms, wz=0.1, lattice_strength=0.5, k_l=1.0)
+    proj   = Projector(geo, soc_dispersion(sigma), e_cut)
+
+    z,   = geo.grids
+    env  = np.exp(-z**2 / (2 * 5.0**2))
+    psi  = proj(np.array([env * np.exp(1j * z), 0.7 * env * np.exp(-1j * z)]))
+    psi /= np.sqrt((geo.dv * np.abs(psi)**2).sum())
+    return geo, kwargs, proj, psi.reshape(-1)
+
+
+def _energy(geo, psi, kw):
+    """E = ⟨ψ|H_sp + V|ψ⟩ + (N/2) Σ_ij g_ij ∫ n_i n_j  (static parameters)."""
+    psi2d = psi.reshape(kw['n_components'], -1)
+    delta = _build_detuning_diagonal(kw['n_components'], kw['detuning'])
+    V     = (_build_trap_potential(geo, 0.0, 0.0, kw['wz'])
+             + _build_lattice_potential(geo, kw['lattice_strength'], kw['k_l']))
+    Omega = _build_rabi_matrix(kw['n_components'], kw['omega_r'])
+    h     = (_H_sp(psi2d, geo, kw['sigma_z'], delta, kw['q_zeeman'], Omega)
+             + _H_potential(psi2d, V))
+    n     = np.abs(psi2d)**2
+    e_lin = (geo.dv * (psi2d.conj() * h).real).sum()
+    e_int = 0.5 * kw['n_atoms'] * (geo.dv * n * (kw['g_matrix'] @ n)).sum()
+    return e_lin + e_int
+
+
+def _norm(geo, psi):
+    return (np.tile(geo.dv, 2) * np.abs(psi)**2).sum()
+
+
+class TestPGPE:
+
+    @pytest.mark.parametrize('mode', ['real', 'imaginary'])
+    def test_rhs_lies_in_cfield(self, mode):
+        geo, kw, proj, psi = _pgpe_setup()
+        rhs = get_rhs(geo=geo, mode=mode, projector=proj, **kw)
+        out = rhs(0.0, psi)
+        assert np.max(np.abs(proj(out) - out)) < 1e-12 * np.max(np.abs(out))
+
+    def test_full_cutoff_reproduces_gpe(self):
+        """A projector keeping every mode leaves the rhs unchanged."""
+        geo, kw, _, psi = _pgpe_setup()
+        everything = Projector(geo, soc_dispersion(kw['sigma_z']), np.inf)
+        a = get_rhs(geo=geo, mode='real', projector=everything, **kw)(0.0, psi)
+        b = get_rhs(geo=geo, mode='real', **kw)(0.0, psi)
+        assert np.max(np.abs(a - b)) < 1e-12 * np.max(np.abs(b))
+
+    def test_real_time_conserves_norm_energy_and_cfield(self):
+        geo, kw, proj, psi = _pgpe_setup()
+        rhs   = get_rhs(geo=geo, mode='real', projector=proj, **kw)
+        psi_t = integrate(rhs, psi, np.linspace(0, 5, 6), dt=0.005)
+
+        # PGPE conserves both exactly; RK4 damps each mode by ~(E dt)⁶/144
+        # per step, which over these 1000 steps stays below 1e-7
+        e0 = _energy(geo, psi, kw)
+        for f in range(psi_t.shape[1]):
+            p = psi_t[:, f]
+            assert abs(_norm(geo, p) - 1) < 1e-7
+            assert abs(_energy(geo, p, kw) - e0) < 1e-7 * abs(e0)
+            # roundoff of one FFT projection per step accumulates slowly
+            assert np.max(np.abs(proj(p) - p)) < 1e-10 * np.max(np.abs(p))
+
+    def test_imaginary_time_lowers_energy_within_cfield(self):
+        geo, kw, proj, psi = _pgpe_setup()
+        rhs   = get_rhs(geo=geo, mode='imaginary', projector=proj, **kw)
+        psi_t = integrate(rhs, psi, np.linspace(0, 5, 11), dt=0.01)
+
+        energies = [_energy(geo, psi_t[:, f] / np.sqrt(_norm(geo, psi_t[:, f])), kw)
+                    for f in range(psi_t.shape[1])]
+        assert np.all(np.diff(energies) < 0)
+        p = psi_t[:, -1]
+        assert np.max(np.abs(proj(p) - p)) < 1e-10 * np.max(np.abs(p))
+
+
+# =============================================================================
+# estimate_max_energy
+# =============================================================================
+
+class TestEstimateMaxEnergy:
+    """
+    With g = 0 the Hamiltonian is linear; build it as a dense matrix
+    H_jk = i · rhs(e_k)_j and compare its spectral radius with the bound.
+    """
+
+    def _dense_H(self, geo, kw, proj=None):
+        rhs = get_rhs(geo=geo, mode='real', projector=proj, **kw)
+        N   = 2 * len(geo.dv)
+        return np.array([1j * rhs(0.0, e) for e in np.eye(N, dtype=complex)]).T
+
+    def test_bounds_gpe_spectrum(self):
+        geo, kw, _, psi = _pgpe_setup(g=0.0)
+        rho = np.abs(np.linalg.eigvals(self._dense_H(geo, kw))).max()
+        assert estimate_max_energy(geo, psi, (0.0,), None, **kw) >= rho
+
+    def test_bounds_pgpe_spectrum(self):
+        geo, kw, proj, psi = _pgpe_setup(g=0.0)
+        P   = np.array([proj(e) for e in np.eye(256, dtype=complex)]).T
+        H   = P @ self._dense_H(geo, kw, proj) @ P
+        rho = np.abs(np.linalg.eigvals(H)).max()
+        bound = estimate_max_energy(geo, psi, (0.0,), proj, **kw)
+        assert bound >= rho
+        # projection removes the fast modes: the bound drops accordingly
+        assert bound < estimate_max_energy(geo, psi, (0.0,), None, **kw) / 3
+
+    def test_interaction_term(self):
+        geo, kw, _, psi = _pgpe_setup(g=0.05, n_atoms=1000.0)
+        e_g  = estimate_max_energy(geo, psi, (0.0,), None, **kw)
+        e_0  = estimate_max_energy(geo, psi, (0.0,), None, **dict(kw, g_matrix=0 * kw['g_matrix']))
+        dens = (np.abs(psi.reshape(2, -1))**2).max(axis=1)
+        assert np.isclose(e_g - e_0, 1000.0 * 0.05 * (np.array([[1, .9], [.9, 1]]) @ dens).max())
+
+    def test_ramp_extremes(self):
+        """Time-dependent lattice: the bound follows the strongest lattice."""
+        geo, kw, _, psi = _pgpe_setup()
+        ramp = dict(kw, lattice_strength=lambda t: 0.5 + t)
+        e_start = estimate_max_energy(geo, psi, (0.0,), None, **ramp)
+        e_both  = estimate_max_energy(geo, psi, (0.0, 2.0), None, **ramp)
+        V_trap   = _build_trap_potential(geo, 0.0, 0.0, kw['wz'])
+        profile  = _build_lattice_potential(geo, 1.0, kw['k_l'])
+        expected = (V_trap + 2.5 * profile).max() - (V_trap + 0.5 * profile).max()
+        assert np.isclose(e_both - e_start, expected)
+
+
+# =============================================================================
+# Interaction-picture split (get_ip_rhs)
+# =============================================================================
+
+class TestIPSplit:
+
+    @pytest.mark.parametrize('mode', ['real', 'imaginary'])
+    @pytest.mark.parametrize('projected', [False, True])
+    def test_split_matches_full_rhs(self, mode, projected):
+        geo, kw, proj, psi = _pgpe_setup()
+        P = proj if projected else None
+        rates, rhs_N = get_ip_rhs(geo=geo, mode=mode, projector=P, **kw)
+        n_comp = kw['n_components']
+        L_psi  = geo.from_spectral(rates * geo.to_spectral(psi.reshape(n_comp, -1)))
+        split  = L_psi.reshape(-1) + rhs_N(0.0, psi)
+        full   = get_rhs(geo=geo, mode=mode, projector=P, **kw)(0.0, psi)
+        assert np.max(np.abs(split - full)) < 1e-11 * np.max(np.abs(full))
+
+    def test_split_matches_full_rhs_axial(self):
+        """Axial: L uses the orthogonalised Bessel basis, geo.kinetic() the raw DHT."""
+        geo   = Geometry3DAxial(sizes=(32, 64), lengths=(20.0, 20*pi))
+        sigma = np.array([1.0, -1.0])
+        kw    = dict(n_components=2, sigma_z=sigma, detuning=0.3,
+                     q_zeeman=np.zeros(2), omega_r=0.5,
+                     g_matrix=0.05 * np.array([[1.0, 0.9], [0.9, 1.0]]),
+                     n_atoms=1000.0, wx=0.2, wy=0.2, wz=0.1,
+                     lattice_strength=0.5, k_l=1.0)
+        r, z  = geo.grids
+        env   = np.exp(-r**2 / 18 - z**2 / 50).reshape(-1)
+        psi   = np.concatenate([env, 0.7 * env]).astype(complex)
+        rates, rhs_N = get_ip_rhs(geo=geo, mode='real', **kw)
+        L_psi = geo.from_spectral(rates * geo.to_spectral(psi.reshape(2, -1)))
+        split = L_psi.reshape(-1) + rhs_N(0.0, psi)
+        full  = get_rhs(geo=geo, mode='real', **kw)(0.0, psi)
+        assert np.max(np.abs(split - full)) < 1e-6 * np.max(np.abs(full))
+
+    def test_rk4ip_agrees_with_rk4(self):
+        geo, kw, proj, psi = _pgpe_setup()
+        rates, rhs_N = get_ip_rhs(geo=geo, mode='real', projector=proj, **kw)
+        a = integrate(rhs_N, psi, [2.0], 0.005,
+                      propagator=LinearPropagator(geo, rates))[:, -1]
+        b = integrate(get_rhs(geo=geo, mode='real', projector=proj, **kw),
+                      psi, [2.0], 0.005)[:, -1]
+        # both are fourth order; they differ by their truncation errors
+        assert np.max(np.abs(a - b)) < 1e-5 * np.max(np.abs(b))
+
+    def test_rk4ip_pgpe_conserves(self):
+        geo, kw, proj, psi = _pgpe_setup()
+        rates, rhs_N = get_ip_rhs(geo=geo, mode='real', projector=proj, **kw)
+        psi_t = integrate(rhs_N, psi, np.linspace(0, 5, 6), dt=0.02,
+                          propagator=LinearPropagator(geo, rates))
+        e0 = _energy(geo, psi, kw)
+        for f in range(psi_t.shape[1]):
+            p = psi_t[:, f]
+            # here N (trap, lattice, interactions) limits the error, ∝ dt⁴
+            assert abs(_norm(geo, p) - 1) < 1e-5
+            assert abs(_energy(geo, p, kw) - e0) < 2e-5 * abs(e0)
+            assert np.max(np.abs(proj(p) - p)) < 1e-10 * np.max(np.abs(p))
+
+    def test_rk4ip_does_not_damp_fast_kinetic_modes(self):
+        """
+        Unprojected GPE with broadband (TWA-like) content up to k_max: at the
+        same dt, RK4 damps the fast kinetic modes (ε up to ~55) while RK4IP
+        evolves them exactly and keeps the norm.
+        """
+        geo, kw, _, psi = _pgpe_setup()
+        rng  = np.random.default_rng(0)
+        psi  = psi + 0.02 * (rng.standard_normal(psi.shape)
+                             + 1j * rng.standard_normal(psi.shape))
+        psi /= np.sqrt(_norm(geo, psi))
+
+        dt, T = 0.02, 5.0
+        rates, rhs_N = get_ip_rhs(geo=geo, mode='real', **kw)
+        ip = integrate(rhs_N, psi, [T], dt,
+                       propagator=LinearPropagator(geo, rates))[:, -1]
+        rk = integrate(get_rhs(geo=geo, mode='real', **kw), psi, [T], dt)[:, -1]
+
+        loss_ip = abs(_norm(geo, ip) - 1)
+        loss_rk = abs(_norm(geo, rk) - 1)
+        # measured: RK4 ≈ 1e-2, RK4IP ≈ 1e-5 (6e-8 without interactions)
+        assert loss_ip < 1e-4
+        assert loss_rk > 100 * loss_ip
+
+    def test_rk4ip_imaginary_time_lowers_energy(self):
+        geo, kw, proj, psi = _pgpe_setup()
+        rates, rhs_N = get_ip_rhs(geo=geo, mode='imaginary', projector=proj, **kw)
+        psi_t = integrate(rhs_N, psi, np.linspace(0, 5, 11), dt=0.05,
+                          propagator=LinearPropagator(geo, rates))
+        energies = [_energy(geo, psi_t[:, f] / np.sqrt(_norm(geo, psi_t[:, f])), kw)
+                    for f in range(psi_t.shape[1])]
+        assert np.all(np.diff(energies) < 0)

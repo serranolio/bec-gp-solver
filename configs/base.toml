@@ -60,7 +60,7 @@ lz_rz_factor = 2.5
 # =============================================================================
 [ground_state]
 steps     = 50000
-step_size = 0.02      # recoil units
+step_size = 0.02      # RK4 step for imaginary time (recoil units), checked against stability
 
 # Initial guess for imaginary-time cooling (both optional).
 # initial_weights: per-component weights broadcast onto the Thomas-Fermi
@@ -75,7 +75,10 @@ step_size = 0.02      # recoil units
 # Real-time simulation
 # =============================================================================
 [simulation]
+mode        = "gpe"   # "gpe" or "pgpe" (projected onto the c-field, needs [projector].e_cut)
 t_frames    = 201     # number of output frames
+# dt        = 0.02    # optional RK4IP step (recoil units); default: the smaller of
+                      # 0.5 × stability limit and the step keeping RK4 damping < 1%
 twa_noise   = false   # add TWA quantum noise to initial state
 # seed      = 12345   # optional: reproducible noise, stream seeded by [seed, sample]
 
@@ -84,11 +87,11 @@ twa_noise   = false   # add TWA quantum noise to initial state
 observables = ["wavefunction"]
 
 # =============================================================================
-# c-field projector (used for TWA noise)
+# c-field projector (used for TWA noise and mode = "pgpe")
 # =============================================================================
 # Modes with k_perp² + (k_z - sigma_z)² < e_cut (recoil energies) form the
 # c-field region; TWA noise puts half a quantum in each of them.
-# e_cut is required when twa_noise = true. A warning is logged if the region
+# e_cut is required when twa_noise = true or mode = "pgpe". A warning is logged if the region
 # aliases the nonlinear term (extends beyond k_max/2) or if the number of
 # modes is not small compared with n_atoms.
 [projector]

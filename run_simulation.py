@@ -9,9 +9,12 @@ Workflow
 1. Load config from a TOML file.
 2. Build geometry and RHS function.
 3. Look up a cached ground state (shared across samples with same physics).
-   If not found, run imaginary-time cooling with solve_ivp and cache it.
-4. Optionally add TWA quantum noise in the c-field region of the projector.
-5. Run real-time evolution with solve_ivp (RK45, adaptive step size).
+   If not found, run imaginary-time cooling and cache it.
+4. With [simulation].mode = "pgpe", project the initial state onto the
+   c-field region; optionally add TWA quantum noise in that region.
+5. Run real-time evolution with fixed-step RK4IP (GPE, or PGPE with the
+   projector applied to the right-hand side). The kinetic + spin-orbit term
+   is integrated exactly; the step is limited only by the remaining terms.
 6. Compute and save the requested observables.
 
 Usage
@@ -30,51 +33,29 @@ from pathlib import Path
 
 import numpy as np
 from numpy import pi
-from scipy.integrate import solve_ivp
-
 from bec_gp_solver.config_loader import (load_config, _compute_derived,
                                         build_projector)
-from bec_gp_solver.gp_equation   import get_rhs
+from bec_gp_solver.gp_equation   import get_ip_rhs, estimate_max_energy
+from bec_gp_solver.integrators   import integrate, resolve_dt, LinearPropagator
 from bec_gp_solver._logging       import setup_logging
 import logging
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# solve_ivp wrapper
+# Simulation mode
 # =============================================================================
 
-def _solve(rhs, psi0, t_span, t_eval, rtol=1e-6, atol=1e-9):
-    """
-    Run solve_ivp with RK45 on a complex-valued problem.
+SIM_MODES = ('gpe', 'pgpe')
 
-    solve_ivp supports complex y0 natively as long as y0 is a complex
-    array — no real/imaginary splitting needed.
 
-    Parameters
-    ----------
-    rhs    : callable(t, psi) -> complex array
-    psi0   : complex 1D array — initial state
-    t_span : (t_start, t_end)
-    t_eval : 1D array of output times (or None for final state only)
-    rtol, atol : solver tolerances
-
-    Returns
-    -------
-    sol : scipy OdeSolution result
-    """
-    sol = solve_ivp(
-        fun    = rhs,
-        t_span = t_span,
-        y0     = psi0.astype(np.complex128),   # ensure complex dtype
-        method = 'RK45',
-        t_eval = t_eval,
-        rtol   = rtol,
-        atol   = atol,
-    )
-    if not sol.success:
-        raise RuntimeError(f"solve_ivp failed: {sol.message}")
-    return sol
+def _sim_mode(cfg):
+    """[simulation].mode: 'gpe' (default) or 'pgpe'."""
+    mode = cfg['simulation'].get('mode', 'gpe')
+    if mode not in SIM_MODES:
+        raise ValueError(f"[simulation].mode must be one of {SIM_MODES}, "
+                         f"got '{mode}'")
+    return mode
 
 
 # =============================================================================
@@ -97,6 +78,10 @@ def _gs_cache_key(cfg):
         'omega_l'    : sweep['omega_l_start'],
         'delta_hz'   : sweep['delta_start_hz'],
     }
+    # a PGPE ground state depends on the c-field region; GPE keys are left
+    # unchanged so existing cached ground states are still found
+    if _sim_mode(cfg) == 'pgpe':
+        physics['e_cut'] = cfg['projector']['e_cut']
     blob = str(sorted(str(physics))).encode()
     return hashlib.md5(blob).hexdigest()[:10]
 
@@ -248,13 +233,17 @@ def prepare_initial_state(cfg, geo, initial_state_path=None):
 # Imaginary-time cooling
 # =============================================================================
 
-def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir):
+def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir, projector=None):
     """
     Run imaginary-time evolution to find the ground state.
 
     The Hamiltonian is time-independent in this mode: all time-dependent
     parameters (detuning ramp, lattice ramp) are evaluated at t=0 by
-    the 'imaginary' mode of get_rhs().
+    the 'imaginary' mode of get_ip_rhs().
+
+    Integrated with fixed-step RK4IP, dt = [ground_state].step_size, which
+    is checked against the stability limit. With a projector (PGPE) the
+    cooling stays in the c-field region and gives the projected ground state.
 
     The result is normalised, saved to out_dir, and returned.
 
@@ -262,9 +251,10 @@ def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir):
     ----------
     cfg        : raw config dict
     geo        : Geometry instance
-    rhs_kwargs : dict — as returned by load_config(), passed to get_rhs()
+    rhs_kwargs : dict — as returned by load_config(), passed to get_ip_rhs()
     psi0       : complex array — initial guess, shape (n_comp * N_total,)
     out_dir    : str or Path — directory to save the ground state .npy file
+    projector  : Projector or None — PGPE projector, None for plain GPE
     """
     gs_cfg = cfg['ground_state']
     t_end  = gs_cfg['steps'] * gs_cfg['step_size']
@@ -272,11 +262,16 @@ def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir):
     logger.info(f"Running imaginary-time cooling: {gs_cfg['steps']} steps "
                 f"× dt={gs_cfg['step_size']} = t_end={t_end:.1f} (recoil units)")
 
-    rhs_imag = get_rhs(geo=geo, mode='imaginary', **rhs_kwargs)
-    sol      = _solve(rhs_imag, psi0, t_span=(0.0, t_end), t_eval=[t_end])
+    e_max        = estimate_max_energy(geo, psi0, (0.0,), projector,
+                                       kinetic=False, **rhs_kwargs)
+    dt           = resolve_dt(gs_cfg['step_size'], e_max)
+    rates, rhs_N = get_ip_rhs(geo=geo, mode='imaginary', projector=projector,
+                              **rhs_kwargs)
+    psi_t        = integrate(rhs_N, psi0, t_eval=[t_end], dt=dt,
+                             propagator=LinearPropagator(geo, rates))
 
     n_comp = cfg['system']['n_components']
-    psi_gs = _renormalise(sol.y[:, -1], geo, n_comp)
+    psi_gs = _renormalise(psi_t[:, -1], geo, n_comp)
 
     # save with a content-based filename so it can be used as --initial-state
     # in subsequent real-time runs
@@ -427,35 +422,54 @@ def run(config_path,
     # --- prepare initial state ---
     psi0 = prepare_initial_state(cfg, geo, initial_state_path)
 
+    # --- c-field projector: needed for PGPE and for TWA noise ---
+    # built for every sample so a missing e_cut or a flagged cutoff shows
+    # up in the sample-0 job as well
+    sim       = cfg['simulation']
+    mode      = _sim_mode(cfg)
+    projector = None
+    if mode == 'pgpe' or sim['twa_noise']:
+        projector = build_projector(cfg, geo)
+
+    # PGPE evolves only the c-field: start from the projected state
+    rhs_projector = projector if mode == 'pgpe' else None
+    if rhs_projector is not None:
+        psi0 = _renormalise(projector(psi0), geo, d['n_comp'])
+
     # --- imaginary-time mode: cool and exit ---
     if imag:
-        run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir)
+        run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir,
+                           projector=rhs_projector)
         return
 
     # --- real-time mode ---
 
     # --- optional TWA noise (sample 0 is the noiseless mean-field run) ---
-    # the projector is built for every sample so a missing e_cut or a
-    # flagged cutoff shows up in the sample-0 job as well
-    if cfg['simulation']['twa_noise']:
-        projector = build_projector(cfg, geo)
-        sample    = cfg['sweep']['sample']
+    if sim['twa_noise']:
+        sample = cfg['sweep']['sample']
         if sample > 0:
             # with [simulation].seed set, each sample gets a reproducible stream
             seed = cfg['simulation'].get('seed')
             rng  = np.random.default_rng(None if seed is None else [seed, sample])
             psi0 = add_twa_noise(psi0, projector, d['n_atoms'], rng)
 
-    sim       = cfg['simulation']
     sweep     = cfg['sweep']
     t_total   = sweep['total_time_ms'] * 1e-3 / d['t_unit']
     t_eval    = np.linspace(0.0, t_total, sim['t_frames'])
 
-    logger.info(f"Real-time evolution: t_total={t_total:.2f}, frames={sim['t_frames']}")
+    logger.info(f"Real-time evolution ({mode}): t_total={t_total:.2f}, "
+                f"frames={sim['t_frames']}")
 
-    rhs_real = get_rhs(geo=geo, mode='real', **rhs_kwargs)
-    sol   = _solve(rhs_real, psi0, t_span=(0.0, t_total), t_eval=t_eval)
-    psi_t = sol.y   # complex array, shape (n_comp * N_total, n_frames)
+    # RK4IP: kinetic + spin-orbit exact, so only the rest limits dt.
+    # Ramps are linear, so their extremes are at the start and the end.
+    e_max        = estimate_max_energy(geo, psi0, (0.0, t_total), rhs_projector,
+                                       kinetic=False, **rhs_kwargs)
+    dt           = resolve_dt(sim.get('dt'), e_max, t_total=t_total)
+    rates, rhs_N = get_ip_rhs(geo=geo, mode='real', projector=rhs_projector,
+                              **rhs_kwargs)
+    psi_t        = integrate(rhs_N, psi0, t_eval=t_eval, dt=dt,
+                             propagator=LinearPropagator(geo, rates))
+    # psi_t: complex array, shape (n_comp * N_total, n_frames)
 
     # --- compute and save observables ---
     observables = compute_observables(psi_t, geo, cfg)
