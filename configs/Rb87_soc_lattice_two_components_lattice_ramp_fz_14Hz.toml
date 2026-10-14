@@ -53,7 +53,7 @@ omega_r = 2.7
 kind         = "3d_axial"
 nx           = 64
 ny           = 0            # unused for 3d_axial and 2d_cart
-nz           = 1024
+nz           = 2048         # alias-free for e_cut = 5: needs nz >= 2 lz (sqrt(e_cut) + max|sigma_z|) / pi ≈ 1421
 lx_rx_factor = 1.5
 ly_ry_factor = 0.0          # unused for 3d_axial and 2d_cart
 lz_rz_factor = 2.3
@@ -85,7 +85,8 @@ observables = ["wavefunction"]
 # aliases the nonlinear term (extends beyond k_max/2) or if the number of
 # modes is not small compared with n_atoms.
 [projector]
-e_cut = 1.80          # largest alias-free cutoff on this grid: 1.803
+e_cut = 5.0           # above (1 + k_l)² ≈ 3.0, so the minority spin of the Raman-dressed
+                      # band minimum is in the c-field, plus ~mu; alias-free on this grid
 
 # =============================================================================
 # Sweep parameters (overridden per job by generate_sweep.py)
