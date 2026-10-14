@@ -24,6 +24,9 @@ Projector(geo, dispersion, e_cut)     — callable, P(psi) -> projected psi
 soc_dispersion(sigma_z)               — dispersion matching gp_equation._H_sp
 mode_energies(geo, dispersion)        — dispersion on the spectral grid
 alias_free_cutoff(geo, dispersion)    — largest e_cut free of aliasing
+dressed_band_minimum(sigma_z, omega_r, delta, q)
+                                      — Raman-dressed band minimum and spinor
+check_dressed_minimum(e_cut, ...)     — flag a cutoff that cuts that spinor
 
 author: Federico Serrano
 Physics and Astronomy Department
@@ -66,6 +69,79 @@ def soc_dispersion(sigma_z):
         return k_perp2 + (k_z - s)**2
 
     return dispersion
+
+
+def dressed_band_minimum(sigma_z, omega_r, delta=0.0, q_zeeman=None):
+    """
+    Minimum of the lowest Raman-dressed band along k_z (k_⊥ = 0).
+
+    At each k_z the spin Hamiltonian is the k-space form of gp_equation._H_sp:
+        H(k_z) = diag((k_z - σ_z)² + Δ + q) + Ω/2
+    with Δ and Ω from the same builders the simulation uses.
+
+    Parameters
+    ----------
+    sigma_z  : 1D array (n_comp,)
+    omega_r  : float — Rabi frequency, recoil units
+    delta    : float — detuning δ, recoil units
+    q_zeeman : 1D array (n_comp,) or None
+
+    Returns
+    -------
+    k_min   : float — k_z of the band minimum (one of them if degenerate)
+    weights : array (n_comp,) — spin weights |c_i|² of the dressed state there
+    """
+    from bec_gp_solver.gp_equation import _build_rabi_matrix, _build_detuning_diagonal
+
+    sigma_z = np.asarray(sigma_z, dtype=float)
+    n_comp  = sigma_z.size
+    q       = np.zeros(n_comp) if q_zeeman is None else np.asarray(q_zeeman)
+    diag0   = _build_detuning_diagonal(n_comp, delta) + q
+    coupling = 0.5 * _build_rabi_matrix(n_comp, omega_r)
+
+    k_span = 2 * np.abs(sigma_z).max() + 2
+    ks     = np.linspace(-k_span, k_span, 8001)
+    H      = np.zeros((ks.size, n_comp, n_comp)) + coupling
+    idx    = np.arange(n_comp)
+    H[:, idx, idx] += (ks[:, None] - sigma_z[None, :])**2 + diag0
+    E, V   = np.linalg.eigh(H)
+
+    i = int(np.argmin(E[:, 0]))
+    return float(ks[i]), np.abs(V[i, :, 0])**2
+
+
+def check_dressed_minimum(e_cut, sigma_z, omega_r, deltas=(0.0,),
+                          q_zeeman=None, weight_tol=0.01):
+    """
+    Flag a cutoff that cuts the Raman-dressed ground state.
+
+    The projector cuts each spin component on its bare dispersion
+    (k_z - σ_z,i)², but at the dressed band minimum k_min every component
+    with weight above weight_tol must lie inside the c-field, i.e.
+    (k_min - σ_z,i)² < e_cut; otherwise the projected ground state loses
+    that spin admixture (for two components at δ = 0 this needs
+    e_cut > (1 + k_l)²). Checked at every detuning in `deltas`.
+
+    Returns True if the dressed minimum lies inside the c-field.
+    """
+    sigma_z = np.asarray(sigma_z, dtype=float)
+    ok = True
+    for delta in deltas:
+        k_min, w = dressed_band_minimum(sigma_z, omega_r, delta, q_zeeman)
+        bare     = (k_min - sigma_z)**2
+        cut      = (w > weight_tol) & (bare >= e_cut)
+        if cut.any():
+            ok = False
+            needed = bare[w > weight_tol].max()
+            logger.warning(
+                f"Projector: e_cut={e_cut} cuts the Raman-dressed band minimum "
+                f"at k_z={k_min:+.3f} (detuning {delta:g} E_R): component(s) "
+                f"{np.flatnonzero(cut).tolist()} with weight "
+                f"{np.round(w[cut], 3).tolist()} have bare energy "
+                f"{np.round(bare[cut], 3).tolist()} >= e_cut, so the projected "
+                f"state loses that spin admixture. Use e_cut > {needed:.3f}."
+            )
+    return ok
 
 
 def mode_energies(geo, dispersion):

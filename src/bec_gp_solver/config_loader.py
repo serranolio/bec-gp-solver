@@ -48,7 +48,8 @@ from numpy import pi
 from pathlib import Path
 
 from bec_gp_solver.geometry  import make_geometry
-from bec_gp_solver.projector import Projector, soc_dispersion, alias_free_cutoff
+from bec_gp_solver.projector import (Projector, soc_dispersion,
+                                     alias_free_cutoff, check_dressed_minimum)
 import logging
 logger = logging.getLogger(__name__)
 
@@ -323,9 +324,10 @@ def build_projector(cfg, geo):
 
     The region uses the spin-orbit dispersion k_⊥² + (k_z - σ_z)² with
     σ_z from [system], below the cutoff [projector].e_cut (recoil energies),
-    which is required. The projector flags (as logged warnings) a cutoff
-    that aliases the nonlinear term and a mode count not small compared
-    with the atom number.
+    which is required. Logged warnings flag a cutoff that aliases the
+    nonlinear term, a mode count not small compared with the atom number,
+    and a cutoff that cuts the spin admixture of the Raman-dressed band
+    minimum (checked at the start and end detuning of the sweep).
 
     Parameters
     ----------
@@ -356,4 +358,13 @@ def build_projector(cfg, geo):
 
     projector = Projector(geo, dispersion, e_cut)
     projector.check_mode_count(cfg['system']['n_atoms'])
+
+    # the Raman-dressed ground state must fit in the c-field at both ends
+    # of the detuning ramp
+    d      = _compute_derived(cfg)
+    sweep  = cfg['sweep']
+    deltas = sorted({sweep['delta_start_hz'] / d['f_recoil'],
+                     sweep['delta_end_hz']   / d['f_recoil']})
+    check_dressed_minimum(e_cut, d['sigma_z'], d['omega_r'], deltas,
+                          d['q_zeeman'])
     return projector

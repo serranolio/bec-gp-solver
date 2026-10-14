@@ -383,6 +383,11 @@ class TestBuildProjector:
         new    = dict(cfg, projector={'e_cut': 0.5})
         assert build_projector(new, geo).e_cut == 0.5
 
+    def test_small_cutoff_flags_dressed_minimum(self, cfg, geo_and_kwargs, caplog):
+        geo, _ = geo_and_kwargs
+        build_projector(dict(cfg, projector={'e_cut': 1.0}), geo)
+        assert 'Raman-dressed' in caplog.text
+
     def test_one_region_per_component(self, cfg, geo_and_kwargs):
         geo, _ = geo_and_kwargs
         proj   = build_projector(dict(cfg, projector={'e_cut': 0.5}), geo)

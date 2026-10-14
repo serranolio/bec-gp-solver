@@ -12,6 +12,9 @@ Strategy
   TestSocDispersion     — the dispersion matches the kinetic + spin-orbit
                           part of gp_equation._H_sp on plane waves.
   TestValidation        — aliasing flag and input errors.
+  TestDressedMinimum    — Raman-dressed band minimum against the analytic
+                          two-component result; flag for a cutoff that
+                          cuts its minority spin.
 
 Run with:
     pytest tests/test_projector.py -v
@@ -22,7 +25,8 @@ from numpy import pi
 import pytest
 
 from bec_gp_solver.geometry import GeometryCart, Geometry3DAxial
-from bec_gp_solver.projector import Projector, soc_dispersion, alias_free_cutoff
+from bec_gp_solver.projector import (Projector, soc_dispersion, alias_free_cutoff,
+                                     dressed_band_minimum, check_dressed_minimum)
 from bec_gp_solver.gp_equation import _H_sp
 
 
@@ -289,3 +293,50 @@ class TestModeCount:
         n_edge = proj.n_modes / MODE_FRACTION_WARN
         assert not proj.check_mode_count(n_atoms=n_edge)
         assert proj.check_mode_count(n_atoms=n_edge * 1.01)
+
+
+# =============================================================================
+# Raman-dressed band minimum
+# =============================================================================
+
+class TestDressedMinimum:
+    """
+    Two components, σ_z = [-1, 1], δ = 0: the lower band of
+    [[(k+1)², Ω/2], [Ω/2, (k-1)²]] has its minima at k = ±k_l with
+    k_l = sqrt(1 - (Ω/4)²) and spin polarisation k_l, i.e. minority
+    weight (1 - k_l)/2 and minority bare energy (1 + k_l)².
+    """
+
+    SIGMA = np.array([-1.0, 1.0])
+
+    @pytest.mark.parametrize('omega_r', [1.0, 2.7, 3.5])
+    def test_analytic_two_component(self, omega_r):
+        k_l    = np.sqrt(1 - (omega_r / 4)**2)
+        k, w   = dressed_band_minimum(self.SIGMA, omega_r)
+        assert abs(abs(k) - k_l) < 2e-3
+        assert np.isclose(w.min(), (1 - k_l) / 2, atol=2e-3)
+        assert np.isclose(w.sum(), 1.0)
+
+    def test_detuning_moves_minimum(self):
+        """δ > 0 lowers component 0 (Δ_0 = -δ/2), centred at k_z = σ_0 = -1."""
+        k0, _ = dressed_band_minimum(self.SIGMA, 2.7, delta=0.0)
+        k2, w = dressed_band_minimum(self.SIGMA, 2.7, delta=2.0)
+        assert k2 < 0 and abs(k2) > abs(k0)
+        assert w[0] > w[1]
+
+    def test_flags_small_cutoff(self, caplog):
+        """e_cut below (1 + k_l)² ≈ 3.02 cuts the minority spin at ω_R = 2.7."""
+        assert not check_dressed_minimum(1.32, self.SIGMA, 2.7)
+        assert 'Raman-dressed' in caplog.text
+
+    def test_accepts_large_cutoff(self):
+        assert check_dressed_minimum(3.1, self.SIGMA, 2.7)
+
+    def test_checks_every_detuning(self):
+        """Fine at δ = 0 with e_cut = 3.1, but δ = 2 needs ≈ 3.6."""
+        assert check_dressed_minimum(3.1, self.SIGMA, 2.7, deltas=(0.0,))
+        assert not check_dressed_minimum(3.1, self.SIGMA, 2.7, deltas=(0.0, 2.0))
+
+    def test_no_raman_is_always_fine(self):
+        """Ω = 0: the minimum is a pure spin state, nothing to cut."""
+        assert check_dressed_minimum(0.5, self.SIGMA, 0.0)
