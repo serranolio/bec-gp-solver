@@ -77,10 +77,22 @@ step_size = 0.02      # recoil units
 [simulation]
 t_frames    = 201     # number of output frames
 twa_noise   = false   # add TWA quantum noise to initial state
+# seed      = 12345   # optional: reproducible noise, stream seeded by [seed, sample]
 
 # Which observables to save — add/remove entries as needed.
 # Supported: "polarization", "populations", "wavefunction", "momentum_density"
 observables = ["wavefunction"]
+
+# =============================================================================
+# c-field projector (used for TWA noise)
+# =============================================================================
+# Modes with k_perp² + (k_z - sigma_z)² < e_cut (recoil energies) form the
+# c-field region; TWA noise puts half a quantum in each of them.
+# e_cut is required when twa_noise = true. A warning is logged if the region
+# aliases the nonlinear term (extends beyond k_max/2) or if the number of
+# modes is not small compared with n_atoms.
+[projector]
+# e_cut = 20.0
 
 # =============================================================================
 # Sweep parameters (overridden per job by generate_sweep.py)

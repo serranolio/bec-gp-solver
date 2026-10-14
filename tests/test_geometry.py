@@ -377,3 +377,77 @@ class TestGeometry3DAxial:
         assert np.allclose(geo.dv.sum(), np.pi*2**2*3, rtol=1e-1)
 
 
+
+# =============================================================================
+# Spectral basis (to_spectral / from_spectral) — used by the projector
+# =============================================================================
+
+def _random_field(rng, shape):
+    return rng.standard_normal(shape) + 1j * rng.standard_normal(shape)
+
+
+@pytest.fixture(params=['1d', '2d', '3d', 'axial'])
+def any_geo(request):
+    if request.param == '1d':
+        return GeometryCart(sizes=(64,), lengths=(10.0,))
+    if request.param == '2d':
+        return GeometryCart(sizes=(16, 32), lengths=(5.0, 10.0))
+    if request.param == '3d':
+        return GeometryCart(sizes=(8, 8, 16), lengths=(4.0, 4.0, 8.0))
+    return Geometry3DAxial(sizes=(32, 64), lengths=(20.0, 60.0))
+
+
+class TestSpectral:
+
+    def test_roundtrip_exact(self, any_geo):
+        """from_spectral(to_spectral(ψ)) == ψ to machine precision."""
+        rng = np.random.default_rng(1)
+        psi = _random_field(rng, (2, len(any_geo.dv)))
+        out = any_geo.from_spectral(any_geo.to_spectral(psi))
+        assert relative_error(out, psi) < 1e-12
+
+    def test_parseval(self, any_geo):
+        """to_spectral is unitary: Σ|a|² == Σ dv |ψ|²."""
+        rng = np.random.default_rng(2)
+        psi = _random_field(rng, len(any_geo.dv))
+        a   = any_geo.to_spectral(psi)
+        lhs = (np.abs(a)**2).sum()
+        rhs = (any_geo.dv * np.abs(psi)**2).sum()
+        assert abs(lhs - rhs) / rhs < 1e-12
+
+    def test_shapes(self, any_geo):
+        """Flat multi-component input → (n_fields, *sizes) → (n_fields, N_total)."""
+        N   = len(any_geo.dv)
+        psi = np.ones(3 * N, dtype=complex)
+        a   = any_geo.to_spectral(psi)
+        assert a.shape == (3,) + tuple(any_geo.sizes)
+        assert any_geo.from_spectral(a).shape == (3, N)
+
+    def test_spectral_kgrids_shape(self, any_geo):
+        assert len(any_geo.spectral_kgrids) == len(any_geo.sizes)
+        for k in any_geo.spectral_kgrids:
+            assert k.shape == tuple(any_geo.sizes)
+
+    def test_plane_wave_is_single_mode_cart(self):
+        """A plane wave maps onto exactly the mode with the matching momentum."""
+        geo   = GeometryCart(sizes=(16, 32), lengths=(5.0, 10.0))
+        x, z  = geo.grids
+        kx, kz = 2*pi/5.0 * 2, 2*pi/10.0 * -3
+        a     = np.abs(geo.to_spectral(np.exp(1j * (kx*x + kz*z))))[0]
+        idx   = np.unravel_index(a.argmax(), a.shape)
+        assert np.isclose(geo.spectral_kgrids[0][idx], kx)
+        assert np.isclose(geo.spectral_kgrids[1][idx], kz)
+        assert (a**2).sum() - a[idx]**2 < 1e-20
+
+    def test_bessel_mode_is_single_mode_axial(self):
+        """J₀(k_n r) e^{ikz} lands (almost entirely) in mode (n, m)."""
+        from scipy.special import jv as _jv
+        geo   = Geometry3DAxial(sizes=(32, 64), lengths=(20.0, 60.0))
+        r, z  = geo.grids
+        n, kz = 3, 2*pi/60.0 * 5
+        psi   = _jv(0, geo._kr[n] * r) * np.exp(1j * kz * z)
+        a2    = np.abs(geo.to_spectral(psi))[0]**2
+        idx   = np.unravel_index(a2.argmax(), a2.shape)
+        assert np.isclose(geo.spectral_kgrids[0][idx], geo._kr[n])
+        assert np.isclose(geo.spectral_kgrids[1][idx], kz)
+        assert a2[idx] / a2.sum() > 1 - 1e-8

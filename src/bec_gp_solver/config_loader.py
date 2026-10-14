@@ -13,6 +13,8 @@ The TOML file is structured as:
     [detuning]    — ramp duration in ms
     [ground_state]— imaginary-time cooling parameters
     [simulation]  — real-time parameters and list of observables to save
+    [projector]   — e_cut of the c-field region in recoil energies
+                    (required when twa_noise = true)
     [sweep]       — job-specific values: sample, ramp_time_ms, delta_start/end,
                     omega_l_start/end
 
@@ -23,6 +25,7 @@ shared across the sweep.
 Public API
 ----------
 load_config(path)           -> (geo, rhs_kwargs)
+build_projector(cfg, geo)   -> Projector onto the c-field region
 _compute_derived(cfg)       -> dict of derived physical quantities
                                (used by run_simulation.py)
 
@@ -44,7 +47,8 @@ import numpy as np
 from numpy import pi
 from pathlib import Path
 
-from bec_gp_solver.geometry import make_geometry
+from bec_gp_solver.geometry  import make_geometry
+from bec_gp_solver.projector import Projector, soc_dispersion, alias_free_cutoff
 import logging
 logger = logging.getLogger(__name__)
 
@@ -311,3 +315,43 @@ def load_config(path):
     )
 
     return geo, rhs_kwargs
+
+
+def build_projector(cfg, geo):
+    """
+    Build the projector onto the c-field region for this config.
+
+    The region uses the spin-orbit dispersion k_⊥² + (k_z - σ_z)² with
+    σ_z from [system], below the cutoff [projector].e_cut (recoil energies),
+    which is required. The projector flags (as logged warnings) a cutoff
+    that aliases the nonlinear term and a mode count not small compared
+    with the atom number.
+
+    Parameters
+    ----------
+    cfg : raw config dict
+    geo : Geometry instance from load_config()
+
+    Returns
+    -------
+    Projector
+
+    Raises
+    ------
+    ValueError : if [projector].e_cut is not set.
+    """
+    dispersion = soc_dispersion(np.array(cfg['system']['sigma_z']))
+    e_cut      = cfg.get('projector', {}).get('e_cut')
+    if e_cut is None:
+        try:
+            hint = (f"the largest alias-free cutoff on this grid is "
+                    f"{alias_free_cutoff(geo, dispersion):.4f}")
+        except ValueError:
+            hint = "no alias-free cutoff exists on this grid"
+        raise ValueError(
+            f"[projector].e_cut must be set when twa_noise = true ({hint})."
+        )
+
+    projector = Projector(geo, dispersion, e_cut)
+    projector.check_mode_count(cfg['system']['n_atoms'])
+    return projector

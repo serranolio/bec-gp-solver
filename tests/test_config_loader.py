@@ -33,7 +33,8 @@ from numpy import pi
 import pytest
 
 from bec_gp_solver.config_loader import (load_config, _compute_derived,
-                                        _build_lattice_ramp, _build_detuning_ramp)
+                                        _build_lattice_ramp, _build_detuning_ramp,
+                                        build_projector)
 from bec_gp_solver.geometry import Geometry3DAxial
 
 
@@ -363,3 +364,26 @@ class TestRampCallables:
         new['sweep'] = dict(cfg['sweep'], ramp_time_ms=-1.0)
         with pytest.raises(ValueError):
             _build_lattice_ramp(new, d['t_unit'])
+
+
+# =============================================================================
+# Projector
+# =============================================================================
+
+class TestBuildProjector:
+
+    def test_missing_e_cut_raises(self, cfg, geo_and_kwargs):
+        geo, _ = geo_and_kwargs
+        new    = {k: v for k, v in cfg.items() if k != 'projector'}
+        with pytest.raises(ValueError, match="e_cut"):
+            build_projector(new, geo)
+
+    def test_explicit_e_cut(self, cfg, geo_and_kwargs):
+        geo, _ = geo_and_kwargs
+        new    = dict(cfg, projector={'e_cut': 0.5})
+        assert build_projector(new, geo).e_cut == 0.5
+
+    def test_one_region_per_component(self, cfg, geo_and_kwargs):
+        geo, _ = geo_and_kwargs
+        proj   = build_projector(dict(cfg, projector={'e_cut': 0.5}), geo)
+        assert proj.mask.shape == (cfg['system']['n_components'],) + tuple(geo.sizes)

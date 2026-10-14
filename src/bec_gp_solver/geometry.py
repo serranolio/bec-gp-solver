@@ -19,6 +19,7 @@ Washington State University
 import numpy as np
 from numpy import pi
 from abc import ABC, abstractmethod
+from scipy.special import jv
 from discrete_hankel_transform import HankelTransform
 
 import logging
@@ -39,8 +40,11 @@ class Geometry(ABC):
                           over the full grid (output of np.meshgrid).
       self.kgrids       : same for momentum-space coordinates.
       self.dv           : flat array of volume elements, shape (N_total,).
+      self.spectral_kgrids : list of nd-arrays, one per axis (last = z),
+                          with the momentum of each spectral mode in the
+                          ordering used by to_spectral() / from_spectral().
 
-    And implement the four abstract methods below.
+    And implement the abstract methods below.
     """
 
     @abstractmethod
@@ -74,6 +78,32 @@ class Geometry(ABC):
     @abstractmethod
     def inverse_transform(self, state):
         """Inverse of forward_transform."""
+        ...
+
+    @abstractmethod
+    def to_spectral(self, psi):
+        """
+        Expand psi in the orthonormal single-particle mode basis.
+
+        The map is unitary with respect to the grid inner product:
+        Σ |a|² = Σ dv |ψ|². Unlike forward_transform() it is unshifted and
+        not normalised as a continuous Fourier transform — it is meant for
+        projectors and noise sampling, not for observables.
+
+        psi : array whose size is a multiple of N_total, e.g. (N_total,),
+              (n_components, N_total) or (n_components * N_total,)
+        Returns array of shape (n_fields, *sizes).
+        """
+        ...
+
+    @abstractmethod
+    def from_spectral(self, psi_k):
+        """
+        Exact inverse of to_spectral().
+
+        psi_k : array of shape (n_fields, *sizes)
+        Returns array of shape (n_fields, N_total).
+        """
         ...
 
 # =============================================================================
@@ -132,6 +162,10 @@ class GeometryCart(Geometry):
         self._k2 = sum(k**2 for k in self.kgrids)   # |k|² in momentum space
         self._kz = self.kgrids[-1]                   # last axis = z
 
+        # spectral basis = plane waves in FFT ordering
+        self.spectral_kgrids = self.kgrids
+        self._sqrt_dv        = np.sqrt(np.prod(spacings))
+
     # -------------------------------------------------------------------------
     # helpers
     # -------------------------------------------------------------------------
@@ -169,6 +203,14 @@ class GeometryCart(Geometry):
                 np.fft.ifftn(np.fft.fftshift(state, axes=self._fft_axes), 
                              axes=self._fft_axes
         ))
+
+    def to_spectral(self, psi):
+        return self._sqrt_dv * np.fft.fftn(psi.reshape((-1,) + self.sizes),
+                                           axes=self._fft_axes, norm='ortho')
+
+    def from_spectral(self, psi_k):
+        out = np.fft.ifftn(psi_k, axes=self._fft_axes, norm='ortho')
+        return (out / self._sqrt_dv).reshape(psi_k.shape[0], -1)
 
 
 # =============================================================================
@@ -234,6 +276,18 @@ class Geometry3DAxial(Geometry):
         # store for use in operators and transforms
         self._kr = kr
         self._kz = kz
+
+        # spectral basis: Bessel modes J₀(kr r) in r × plane waves in z.
+        # The symmetric DHT kernel T is orthogonal only up to ~1e-9, so we
+        # replace it by its polar factor (nearest orthogonal matrix): this
+        # makes to_spectral exactly unitary and projectors exactly idempotent.
+        j, S = self._ht.zeros, self._ht.factor
+        J1   = np.abs(jv(1, j))
+        T    = 2 * jv(0, np.outer(j, j) / S) / (np.outer(J1, J1) * S)
+        u, _, vt = np.linalg.svd(T)
+        self._U_r     = u @ vt
+        self._sqrt_dv = np.sqrt(self.dv).reshape(nx, nz)
+        self.spectral_kgrids = np.meshgrid(kr, kz, indexing='ij')
 
         # kinetic matrix in r: built once, O(nx²), applied by matmul
         # T_r ψ = iDHT[ kr² · DHT[ψ] ] precomputed as a dense (nx × nx) matrix
@@ -303,6 +357,16 @@ class Geometry3DAxial(Geometry):
         out = np.fft.fftshift(out, axes=-1)
         out = (np.sqrt(2*pi) / self.dz) * np.fft.ifft(out, axis=-1)
         return out.reshape(shape0)
+
+    def to_spectral(self, psi):
+        """Orthogonal Bessel transform in r, unitary FFT in z."""
+        nx, nz = self.sizes
+        p = self._sqrt_dv * psi.reshape((-1, nx, nz))
+        return np.fft.fft(self._U_r @ p, axis=-1, norm='ortho')
+
+    def from_spectral(self, psi_k):
+        p = self._U_r.T @ np.fft.ifft(psi_k, axis=-1, norm='ortho')
+        return (p / self._sqrt_dv).reshape(psi_k.shape[0], -1)
 
 
 # =============================================================================

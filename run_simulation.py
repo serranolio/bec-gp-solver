@@ -10,7 +10,7 @@ Workflow
 2. Build geometry and RHS function.
 3. Look up a cached ground state (shared across samples with same physics).
    If not found, run imaginary-time cooling with solve_ivp and cache it.
-4. Optionally add TWA quantum noise.
+4. Optionally add TWA quantum noise in the c-field region of the projector.
 5. Run real-time evolution with solve_ivp (RK45, adaptive step size).
 6. Compute and save the requested observables.
 
@@ -32,7 +32,8 @@ import numpy as np
 from numpy import pi
 from scipy.integrate import solve_ivp
 
-from bec_gp_solver.config_loader import load_config, _compute_derived
+from bec_gp_solver.config_loader import (load_config, _compute_derived,
+                                        build_projector)
 from bec_gp_solver.gp_equation   import get_rhs
 from bec_gp_solver._logging       import setup_logging
 import logging
@@ -292,50 +293,23 @@ def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir):
 # TWA noise
 # =============================================================================
 
-def add_twa_noise(psi_gs, geo, n_atoms, n_comp, sample):
+def add_twa_noise(psi_gs, projector, n_atoms, rng):
     """
-    Add half-quantum of vacuum noise per mode (TWA approximation).
+    Add Wigner vacuum noise (TWA): half a quantum per c-field mode.
 
-    Noise is generated in momentum space with amplitude 1/sqrt(4 N dvk),
-    then transformed back to real space. A circular de-aliasing mask
-    retains only modes within 2/3 of the maximum |k| (standard 2/3 rule),
-    which prevents aliasing errors from the nonlinear interaction term.
-
-    sample == 0 is treated as the mean-field trajectory: noise is set to
-    zero so the ground state is evolved without any stochastic fluctuations.
+    The noise lives exactly in the c-field region defined by the projector
+    (spin-orbit dispersion below e_cut), so its mode content matches the
+    projected dynamics. psi_gs itself is not projected here.
 
     Parameters
     ----------
-    psi_gs : complex array, shape (n_comp * N_total,)
-    geo    : Geometry instance — must expose kgrids, dv, dvk
-    n_atoms: float
-    n_comp : int
-    sample : int — noise realisation index; 0 means no noise
+    psi_gs    : complex array, shape (n_comp * N_total,)
+    projector : Projector — from config_loader.build_projector()
+    n_atoms   : float
+    rng       : np.random.Generator
     """
-    N_total = geo.dv.shape[0]
-
-    # de-aliasing mask: keep modes inside 2/3 of the maximum |k| radius
-    # sum over all momentum-grid components, works for 1d/2d/3d_cart and 3d_axial
-    k2   = sum(k**2 for k in geo.kgrids).reshape(N_total)
-    mask = (k2 <= k2.max() * (2.0 / 3.0)**2)
-
-    # generate noise in k-space, one row per component
-    noise_k = (
-        np.random.normal(scale=1 / np.sqrt(4 * n_atoms * geo.dvk),
-                         size=(n_comp, N_total))
-      + 1j * np.random.normal(scale=1 / np.sqrt(4 * n_atoms * geo.dvk),
-                               size=(n_comp, N_total))
-    )
-
-    # apply mask and transform back to real space
-    noise = geo.inverse_transform(
-        noise_k * mask[None, :]
-    ).reshape(n_comp * N_total)
-
-    if sample == 0:
-        noise = np.zeros_like(noise)
-
-    return psi_gs + noise
+    noise = projector.twa_noise(rng, n_atoms)
+    return psi_gs + noise.reshape(psi_gs.shape)
 
 # =============================================================================
 # Observables
@@ -460,13 +434,17 @@ def run(config_path,
 
     # --- real-time mode ---
 
-    # --- optional TWA noise ---
-    if cfg['simulation']['twa_noise'] and cfg['sweep']['sample'] > 0:
-        psi0 = add_twa_noise(psi0,
-                             geo,
-                             d['n_atoms'],
-                             d['n_comp'],
-                             cfg['sweep']['sample'])
+    # --- optional TWA noise (sample 0 is the noiseless mean-field run) ---
+    # the projector is built for every sample so a missing e_cut or a
+    # flagged cutoff shows up in the sample-0 job as well
+    if cfg['simulation']['twa_noise']:
+        projector = build_projector(cfg, geo)
+        sample    = cfg['sweep']['sample']
+        if sample > 0:
+            # with [simulation].seed set, each sample gets a reproducible stream
+            seed = cfg['simulation'].get('seed')
+            rng  = np.random.default_rng(None if seed is None else [seed, sample])
+            psi0 = add_twa_noise(psi0, projector, d['n_atoms'], rng)
 
     sim       = cfg['simulation']
     sweep     = cfg['sweep']
