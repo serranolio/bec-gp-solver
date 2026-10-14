@@ -95,7 +95,8 @@ observables = ["wavefunction"]
 # aliases the nonlinear term (extends beyond k_max/2) or if the number of
 # modes is not small compared with n_atoms.
 [projector]
-# e_cut = 20.0
+e_cut = 1.35          # no alias-free cutoff exists here: the sigma_z = 3 minimum
+                      # (k_z = 3) lies beyond k_max/2 = 2.15, so a warning is logged
 
 # =============================================================================
 # Sweep parameters (overridden per job by generate_sweep.py)

@@ -77,6 +77,17 @@ twa_noise   = true   # add TWA quantum noise to initial state
 observables = ["wavefunction"]
 
 # =============================================================================
+# c-field projector (used for TWA noise and mode = "pgpe")
+# =============================================================================
+# Modes with k_perp² + (k_z - sigma_z)² < e_cut (recoil energies) form the
+# c-field region; TWA noise puts half a quantum in each of them.
+# e_cut is required when twa_noise = true or mode = "pgpe". A warning is logged if the region
+# aliases the nonlinear term (extends beyond k_max/2) or if the number of
+# modes is not small compared with n_atoms.
+[projector]
+e_cut = 1.35          # largest alias-free cutoff on this grid: 1.357
+
+# =============================================================================
 # Sweep parameters (overridden per job by generate_sweep.py)
 # =============================================================================
 [sweep]
