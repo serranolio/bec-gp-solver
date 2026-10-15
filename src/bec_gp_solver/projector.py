@@ -245,9 +245,13 @@ class Projector:
         this is P applied to δ-correlated real-space noise.
 
         rng      : np.random.Generator
-        variance : float — mean |amplitude|² per mode
+        variance : float, or array (n_comp,) for a per-component variance —
+                   mean |amplitude|² per mode
         Returns complex array, shape (n_comp, N_total).
         """
+        variance = np.asarray(variance, dtype=float)
+        if variance.ndim == 1:
+            variance = variance.reshape((-1,) + (1,) * (self.mask.ndim - 1))
         scale = np.sqrt(variance / 2)
         a = (rng.normal(scale=scale, size=self.mask.shape)
              + 1j * rng.normal(scale=scale, size=self.mask.shape))

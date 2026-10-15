@@ -75,7 +75,8 @@ step_size = 0.02      # RK4 step for imaginary time (recoil units), checked agai
 # Real-time simulation
 # =============================================================================
 [simulation]
-mode        = "gpe"   # "gpe" or "pgpe" (projected onto the c-field, needs [projector].e_cut)
+mode        = "gpe"   # "gpe", "pgpe" (projected onto the c-field, needs [projector].e_cut)
+                      # or "spgpe" (PGPE + thermal reservoir, also needs [reservoir])
 t_frames    = 201     # number of output frames
 # dt        = 0.02    # optional RK4IP step (recoil units); default: the smaller of
                       # 0.5 × stability limit and the step keeping RK4 damping < 1%
@@ -87,16 +88,31 @@ twa_noise   = false   # add TWA quantum noise to initial state
 observables = ["wavefunction"]
 
 # =============================================================================
-# c-field projector (used for TWA noise and mode = "pgpe")
+# c-field projector (used for TWA noise and mode = "pgpe"/"spgpe")
 # =============================================================================
 # Modes with k_perp² + (k_z - sigma_z)² < e_cut (recoil energies) form the
 # c-field region; TWA noise puts half a quantum in each of them.
-# e_cut is required when twa_noise = true or mode = "pgpe". A warning is logged if the region
+# e_cut is required when twa_noise = true or mode = "pgpe"/"spgpe". A warning is logged if the region
 # aliases the nonlinear term (extends beyond k_max/2) or if the number of
 # modes is not small compared with n_atoms.
 [projector]
 e_cut = 1.35          # no alias-free cutoff exists here: the sigma_z = 3 minimum
                       # (k_z = 3) lies beyond k_max/2 = 2.15, so a warning is logged
+
+# =============================================================================
+# Thermal reservoir (used only for mode = "spgpe"; fixed during the ramp)
+# =============================================================================
+# Number damping γ_j, energy damping ℳ_j and particle exchange ℳ_jk are
+# computed from temperature_nk, mu_hz, [projector].e_cut and a_matrix
+# (Bradley & Blakie 2014); the run log prints them. They are exponentially
+# small when e_cut - mu >> k_B T. Optional overrides: gamma, energy_damping
+# (scalar or per component), exchange_damping (scalar or symmetric matrix).
+# mu uses the same energy zero as the Hamiltonian, where the bare band minima
+# (k_z = sigma_z) are at 0; an imaginary-time run logs the ground-state mu.
+# [reservoir]
+# temperature_nk = 100.0    # reservoir temperature
+# mu_hz          = 2440.0   # reservoir chemical potential
+# equilibrate_ms = 5.0      # optional: SPGPE hold at the t = 0 parameters before the ramp
 
 # =============================================================================
 # Sweep parameters (overridden per job by generate_sweep.py)

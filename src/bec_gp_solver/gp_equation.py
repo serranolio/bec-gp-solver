@@ -160,6 +160,25 @@ def _static_terms(geo, n_components, detuning, q_zeeman, omega_r, g_matrix,
     )
 
 
+def _make_H_rest(terms, n_atoms):
+    """
+    H minus its kinetic + spin-orbit part, from the output of _static_terms():
+    Δ + q + Ω/2 + V_trap + V_lattice + interactions. Used by the
+    interaction-picture split (get_ip_rhs) and by the SPGPE.
+    """
+    q_zeeman, Omega, g_matrix, V_trap = (terms['q_zeeman'], terms['Omega'],
+                                         terms['g_matrix'], terms['V_trap'])
+    delta_fn, lattice_fn = terms['delta_fn'], terms['lattice_fn']
+
+    def H_rest(t, psi2d):
+        return ((delta_fn(t) + q_zeeman)[:, None] * psi2d
+                + 0.5 * (Omega @ psi2d)
+                + _H_potential(psi2d, V_trap + lattice_fn(t))
+                + _H_interaction(psi2d, g_matrix, n_atoms))
+
+    return H_rest
+
+
 # =============================================================================
 # Public API
 # =============================================================================
@@ -271,17 +290,8 @@ def get_ip_rhs(geo, n_components, sigma_z, detuning, q_zeeman, omega_r,
     _dv = geo.dv
     T = _static_terms(geo, n_components, detuning, q_zeeman, omega_r, g_matrix,
                       wx, wy, wz, lattice_strength, k_l, homogeneous, projector)
-    _q_zeeman, _Omega, _g_matrix, _V_trap = (T['q_zeeman'], T['Omega'],
-                                             T['g_matrix'], T['V_trap'])
-    _delta_fn, _V_lattice_fn, _project   = (T['delta_fn'], T['lattice_fn'],
-                                             T['project'])
-
-    def _H_rest(t, psi2d):
-        """H - (kinetic + spin-orbit): Δ + q + Ω/2 + V + interactions."""
-        return ((_delta_fn(t) + _q_zeeman)[:, None] * psi2d
-                + 0.5 * (_Omega @ psi2d)
-                + _H_potential(psi2d, _V_trap + _V_lattice_fn(t))
-                + _H_interaction(psi2d, _g_matrix, n_atoms))
+    _project = T['project']
+    _H_rest  = _make_H_rest(T, n_atoms)
 
     if mode == 'real':
         rates = -1j * eps

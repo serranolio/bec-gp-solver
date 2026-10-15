@@ -14,7 +14,8 @@ The TOML file is structured as:
     [ground_state]— imaginary-time cooling parameters
     [simulation]  — real-time parameters and list of observables to save
     [projector]   — e_cut of the c-field region in recoil energies
-                    (required when twa_noise = true or mode = "pgpe")
+                    (required when twa_noise = true or mode = "pgpe"/"spgpe")
+    [reservoir]   — SPGPE thermal reservoir: temperature, mu, damping rates
     [sweep]       — job-specific values: sample, ramp_time_ms, delta_start/end,
                     omega_l_start/end
 
@@ -341,7 +342,7 @@ def build_projector(cfg, geo):
     Raises
     ------
     ValueError : if [projector].e_cut is not set (it is required for
-                 TWA noise and for PGPE).
+                 TWA noise, PGPE and SPGPE).
     """
     dispersion = soc_dispersion(np.array(cfg['system']['sigma_z']))
     e_cut      = cfg.get('projector', {}).get('e_cut')
@@ -353,7 +354,7 @@ def build_projector(cfg, geo):
             hint = "no alias-free cutoff exists on this grid"
         raise ValueError(
             f"[projector].e_cut must be set when twa_noise = true or "
-            f"mode = 'pgpe' ({hint})."
+            f"mode = 'pgpe' / 'spgpe' ({hint})."
         )
 
     projector = Projector(geo, dispersion, e_cut)

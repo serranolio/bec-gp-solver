@@ -10,10 +10,13 @@ Workflow
 2. Build geometry and RHS function.
 3. Look up a cached ground state (shared across samples with same physics).
    If not found, run imaginary-time cooling and cache it.
-4. With [simulation].mode = "pgpe", project the initial state onto the
-   c-field region; optionally add TWA quantum noise in that region.
-5. Run real-time evolution with fixed-step RK4IP (GPE, or PGPE with the
-   projector applied to the right-hand side). The kinetic + spin-orbit term
+4. With [simulation].mode = "pgpe" or "spgpe", project the initial state
+   onto the c-field region; optionally add TWA quantum noise in that region.
+5. Run real-time evolution with fixed-step RK4IP: GPE, PGPE (projector
+   applied to the right-hand side) or SPGPE (PGPE plus number damping,
+   energy damping and particle exchange with a thermal reservoir, see
+   [reservoir]; optionally first equilibrated at the initial parameters).
+   The kinetic + spin-orbit term
    is integrated exactly; the step is limited only by the remaining terms.
 6. Compute and save the requested observables.
 
@@ -35,8 +38,10 @@ import numpy as np
 from numpy import pi
 from bec_gp_solver.config_loader import (load_config, _compute_derived,
                                         build_projector)
-from bec_gp_solver.gp_equation   import get_ip_rhs, estimate_max_energy
+from bec_gp_solver.gp_equation   import get_rhs, get_ip_rhs, estimate_max_energy
 from bec_gp_solver.integrators   import integrate, resolve_dt, LinearPropagator
+from bec_gp_solver.spgpe         import (get_spgpe_rhs, estimate_max_rate,
+                                        reservoir_rates)
 from bec_gp_solver._logging       import setup_logging
 import logging
 logger = logging.getLogger(__name__)
@@ -46,16 +51,80 @@ logger = logging.getLogger(__name__)
 # Simulation mode
 # =============================================================================
 
-SIM_MODES = ('gpe', 'pgpe')
+SIM_MODES       = ('gpe', 'pgpe', 'spgpe')
+PROJECTED_MODES = ('pgpe', 'spgpe')     # evolve only the c-field
+K_BOLTZMANN     = 1.380649e-23          # J/K (exact, SI)
 
 
 def _sim_mode(cfg):
-    """[simulation].mode: 'gpe' (default) or 'pgpe'."""
+    """[simulation].mode: 'gpe' (default), 'pgpe' or 'spgpe'."""
     mode = cfg['simulation'].get('mode', 'gpe')
     if mode not in SIM_MODES:
         raise ValueError(f"[simulation].mode must be one of {SIM_MODES}, "
                          f"got '{mode}'")
     return mode
+
+
+def _reservoir(cfg, d):
+    """
+    SPGPE reservoir from [reservoir], in recoil units. Fixed during the ramp.
+
+        temperature_nk  -> temperature   : k_B T / E_R
+        mu_hz           -> mu            : μ / E_R (same energy zero as H)
+        equilibrate_ms  -> t_equilibrate : optional SPGPE hold at the t = 0
+                                           parameters before the ramp
+
+    Energy damping and particle exchange are only supported on 3D grids; on
+    1d_cart/2d_cart they must be overridden to 0 (number damping only).
+
+    The damping rates γ_j, ℳ_j and ℳ_jk are computed from T, μ, the cutoff
+    [projector].e_cut and the scattering lengths [system].a_matrix
+    (spgpe.reservoir_rates, Bradley & Blakie 2014). Each can be overridden
+    with optional keys gamma, energy_damping (scalar or per component) and
+    exchange_damping (scalar for all pairs, or a symmetric matrix).
+    """
+    res      = cfg.get('reservoir')
+    required = ('temperature_nk', 'mu_hz')
+    missing  = [k for k in required if res is None or k not in res]
+    if missing:
+        raise ValueError(f"mode = 'spgpe' needs [reservoir] with {required}; "
+                         f"missing: {missing}")
+
+    f_recoil    = d['f_recoil']
+    h_si        = 2 * pi * cfg['constants']['hbar_si']
+    temperature = K_BOLTZMANN * res['temperature_nk'] * 1e-9 / (h_si * f_recoil)
+    mu          = res['mu_hz'] / f_recoil
+
+    a_recoil = (np.array(cfg['system']['a_matrix'], dtype=float)
+                * cfg['constants']['a_si'] / d['l_unit'])
+    rates    = reservoir_rates(temperature, mu, cfg['projector']['e_cut'], a_recoil)
+    for key in ('gamma', 'energy_damping', 'exchange_damping'):
+        if key in res:
+            rates[key] = np.asarray(res[key], dtype=float)
+
+    # energy damping and particle exchange use the 3D kernel 1/|k|; on
+    # effective 1D/2D grids that kernel is not the reduced one (it diverges
+    # at small k in 1D and misses the transverse-area factor), so only number
+    # damping is supported there for now
+    reduced = cfg['geometry']['kind'] in ('1d_cart', '2d_cart')
+    if reduced and (np.any(rates['energy_damping'] > 0)
+                    or np.any(rates['exchange_damping'] > 0)):
+        raise ValueError(
+            f"SPGPE energy damping and particle exchange are only implemented "
+            f"for 3D grids (3d_axial, 3d_cart), not '{cfg['geometry']['kind']}'. "
+            f"Set energy_damping = 0.0 and exchange_damping = 0.0 in "
+            f"[reservoir] to run with number damping only."
+        )
+
+    return dict(
+        temperature      = temperature,
+        mu               = mu,
+        gamma            = rates['gamma'],
+        energy_damping   = rates['energy_damping'],
+        exchange_damping = rates['exchange_damping'],
+        n_bar            = rates['n_bar'],
+        t_equilibrate    = res.get('equilibrate_ms', 0.0) * 1e-3 / d['t_unit'],
+    )
 
 
 # =============================================================================
@@ -80,7 +149,8 @@ def _gs_cache_key(cfg):
     }
     # a PGPE ground state depends on the c-field region; GPE keys are left
     # unchanged so existing cached ground states are still found
-    if _sim_mode(cfg) == 'pgpe':
+    # (PGPE and SPGPE share the projected ground state)
+    if _sim_mode(cfg) in PROJECTED_MODES:
         physics['e_cut'] = cfg['projector']['e_cut']
     blob = str(sorted(str(physics))).encode()
     return hashlib.md5(blob).hexdigest()[:10]
@@ -273,6 +343,14 @@ def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir, projector=None):
     n_comp = cfg['system']['n_components']
     psi_gs = _renormalise(psi_t[:, -1], geo, n_comp)
 
+    # chemical potential μ = ⟨ψ|H|ψ⟩, e.g. to set [reservoir].mu_hz for SPGPE
+    H_psi = 1j * get_rhs(geo=geo, mode='real', projector=projector,
+                         **rhs_kwargs)(0.0, psi_gs)
+    mu_gs = (np.tile(geo.dv, n_comp) * (psi_gs.conj() * H_psi).real).sum()
+    f_rec = cfg['constants']['f_recoil']
+    logger.info(f"Ground-state chemical potential: mu = {mu_gs:.6f} E_R "
+                f"= {mu_gs * f_rec:.2f} Hz")
+
     # save with a content-based filename so it can be used as --initial-state
     # in subsequent real-time runs
     out_path = Path(output_dir)
@@ -422,17 +500,17 @@ def run(config_path,
     # --- prepare initial state ---
     psi0 = prepare_initial_state(cfg, geo, initial_state_path)
 
-    # --- c-field projector: needed for PGPE and for TWA noise ---
+    # --- c-field projector: needed for PGPE/SPGPE and for TWA noise ---
     # built for every sample so a missing e_cut or a flagged cutoff shows
     # up in the sample-0 job as well
     sim       = cfg['simulation']
     mode      = _sim_mode(cfg)
     projector = None
-    if mode == 'pgpe' or sim['twa_noise']:
+    if mode in PROJECTED_MODES or sim['twa_noise']:
         projector = build_projector(cfg, geo)
 
-    # PGPE evolves only the c-field: start from the projected state
-    rhs_projector = projector if mode == 'pgpe' else None
+    # PGPE/SPGPE evolve only the c-field: start from the projected state
+    rhs_projector = projector if mode in PROJECTED_MODES else None
     if rhs_projector is not None:
         psi0 = _renormalise(projector(psi0), geo, d['n_comp'])
 
@@ -444,14 +522,15 @@ def run(config_path,
 
     # --- real-time mode ---
 
+    # one random stream per run (TWA and SPGPE noise); with
+    # [simulation].seed set, each sample gets a reproducible stream
+    sample = cfg['sweep']['sample']
+    seed   = sim.get('seed')
+    rng    = np.random.default_rng(None if seed is None else [seed, sample])
+
     # --- optional TWA noise (sample 0 is the noiseless mean-field run) ---
-    if sim['twa_noise']:
-        sample = cfg['sweep']['sample']
-        if sample > 0:
-            # with [simulation].seed set, each sample gets a reproducible stream
-            seed = cfg['simulation'].get('seed')
-            rng  = np.random.default_rng(None if seed is None else [seed, sample])
-            psi0 = add_twa_noise(psi0, projector, d['n_atoms'], rng)
+    if sim['twa_noise'] and sample > 0:
+        psi0 = add_twa_noise(psi0, projector, d['n_atoms'], rng)
 
     sweep     = cfg['sweep']
     t_total   = sweep['total_time_ms'] * 1e-3 / d['t_unit']
@@ -462,13 +541,40 @@ def run(config_path,
 
     # RK4IP: kinetic + spin-orbit exact, so only the rest limits dt.
     # Ramps are linear, so their extremes are at the start and the end.
-    e_max        = estimate_max_energy(geo, psi0, (0.0, t_total), rhs_projector,
-                                       kinetic=False, **rhs_kwargs)
-    dt           = resolve_dt(sim.get('dt'), e_max, t_total=t_total)
-    rates, rhs_N = get_ip_rhs(geo=geo, mode='real', projector=rhs_projector,
-                              **rhs_kwargs)
-    psi_t        = integrate(rhs_N, psi0, t_eval=t_eval, dt=dt,
-                             propagator=LinearPropagator(geo, rates))
+    step_hook = None
+    if mode == 'spgpe':
+        res = _reservoir(cfg, d)
+        logger.info(f"Reservoir (recoil units): k_BT={res['temperature']:.4g}, "
+                    f"mu={res['mu']:.4g}, occupation at cutoff={res['n_bar']:.3g}, "
+                    f"equilibration t={res['t_equilibrate']:.4g}")
+        logger.info(f"  gamma_j={np.round(res['gamma'], 8).tolist()}, "
+                    f"M_j={np.round(res['energy_damping'], 8).tolist()}, "
+                    f"M_jk={np.round(res['exchange_damping'], 8).tolist()}")
+        e_max = estimate_max_rate(geo, psi0, (0.0, t_total), projector,
+                                  res['gamma'], res['mu'], res['energy_damping'],
+                                  res['exchange_damping'], **rhs_kwargs)
+        dt    = resolve_dt(sim.get('dt'), e_max,
+                           t_total=t_total + res['t_equilibrate'])
+        rates, rhs_N, step_hook = get_spgpe_rhs(
+            geo, projector, rng, res['temperature'], res['mu'], res['gamma'],
+            res['energy_damping'], res['exchange_damping'], **rhs_kwargs)
+
+        # thermalise with the reservoir at the t = 0 parameters
+        if res['t_equilibrate'] > 0:
+            psi0 = integrate(lambda t, psi: rhs_N(0.0, psi), psi0,
+                             t_eval=[res['t_equilibrate']], dt=dt,
+                             propagator=LinearPropagator(geo, rates),
+                             step_hook=step_hook)[:, -1]
+    else:
+        e_max        = estimate_max_energy(geo, psi0, (0.0, t_total), rhs_projector,
+                                           kinetic=False, **rhs_kwargs)
+        dt           = resolve_dt(sim.get('dt'), e_max, t_total=t_total)
+        rates, rhs_N = get_ip_rhs(geo=geo, mode='real', projector=rhs_projector,
+                                  **rhs_kwargs)
+
+    psi_t = integrate(rhs_N, psi0, t_eval=t_eval, dt=dt,
+                      propagator=LinearPropagator(geo, rates),
+                      step_hook=step_hook)
     # psi_t: complex array, shape (n_comp * N_total, n_frames)
 
     # --- compute and save observables ---

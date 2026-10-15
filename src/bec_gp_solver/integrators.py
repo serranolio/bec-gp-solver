@@ -34,7 +34,7 @@ keeps this below damping_tol when choosing a default step.
 
 Public API
 ----------
-integrate(rhs, psi0, t_eval, dt, t0=0.0, propagator=None)
+integrate(rhs, psi0, t_eval, dt, t0=0.0, propagator=None, step_hook=None)
                                           -> array (psi0.size, len(t_eval))
 LinearPropagator(geo, rates)              -> ψ ↦ exp(rates·τ) ψ, for RK4IP
 resolve_dt(dt, e_max, t_total=None, ...)  -> validated or default step
@@ -147,7 +147,7 @@ def _rk4ip_step(rhs_N, D, t, psi, dt):
     return D(psi_I + dt / 6 * (k1 + 2 * k2 + 2 * k3), h2) + dt / 6 * k4
 
 
-def integrate(rhs, psi0, t_eval, dt, t0=0.0, propagator=None):
+def integrate(rhs, psi0, t_eval, dt, t0=0.0, propagator=None, step_hook=None):
     """
     Integrate dψ/dt = rhs(t, ψ) with fixed-step RK4, or with RK4IP when a
     propagator is given (then dψ/dt = Lψ + rhs(t, ψ), exp(Lτ) = propagator).
@@ -163,6 +163,10 @@ def integrate(rhs, psi0, t_eval, dt, t0=0.0, propagator=None):
     t0         : float — initial time
     propagator : callable(psi, tau) -> exp(Lτ)ψ, e.g. LinearPropagator;
                  None for plain RK4
+    step_hook  : callable(t, h) or None — called once before every step.
+                 Stochastic right-hand sides use it to draw their noise
+                 increments, which then stay fixed for all stages of the
+                 step (Stratonovich interpretation).
 
     Returns
     -------
@@ -189,6 +193,8 @@ def integrate(rhs, psi0, t_eval, dt, t0=0.0, propagator=None):
             n  = int(np.ceil(interval / dt - 1e-9))
             h  = interval / n
             for j in range(n):
+                if step_hook is not None:
+                    step_hook(t + j * h, h)
                 psi = step(t + j * h, psi, h)
             steps += n
         t = t_next
