@@ -378,6 +378,13 @@ def run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir, projector=None):
     logger.info(f"Ground-state chemical potential: mu = {mu_gs:.6f} E_R "
                 f"= {mu_gs * f_rec:.2f} Hz")
 
+    # convergence: a stationary state has (P)Hψ = μψ
+    residual = np.abs(H_psi - mu_gs * psi_gs).max() / np.abs(mu_gs * psi_gs).max()
+    logger.info(f"Ground-state residual max|(P)Hψ - μψ| / max|μψ| = {residual:.2e}")
+    if residual > 1e-3:
+        logger.warning("Ground state not converged (residual > 1e-3): "
+                       "increase [ground_state].steps.")
+
     # save with a content-based filename so it can be used as --initial-state
     # in subsequent real-time runs
     out_path = Path(output_dir)

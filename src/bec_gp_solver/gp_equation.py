@@ -73,9 +73,11 @@ def _build_detuning_diagonal(n_components, detuning):
         return (2*i - 1) * detuning / 2
 
 
-def _build_trap_potential(geo, wx, wy, wz):
+def _build_trap_potential(geo, wx, wy, wz, v_max=None):
     """
-    V_trap = Σ_k (w_k r_k)² / 4  on the geometry grid.
+    V_trap = Σ_k (w_k r_k)² / 4  on the geometry grid, capped at v_max if
+    given (the cap only acts far outside the cloud, where it keeps the
+    potential from limiting the time step).
     Aligns (wx, wy, wz) to the last geo.ndim axes, ignoring unused ones.
     Returns a flat 1D array of shape (N_total,).
     """
@@ -84,6 +86,8 @@ def _build_trap_potential(geo, wx, wy, wz):
     else:
         active_freqs = [wx, wy, wz][-geo.ndim:]
     U = sum((w * r)**2 / 4 for w, r in zip(active_freqs, geo.grids))
+    if v_max is not None:
+        U = np.minimum(U, v_max)
     return U.reshape(-1)
 
 
@@ -133,7 +137,8 @@ def _H_interaction(psi, g_matrix, n_atoms):
 
 
 def _static_terms(geo, n_components, detuning, q_zeeman, omega_r, g_matrix,
-                  wx, wy, wz, lattice_strength, k_l, homogeneous, projector):
+                  wx, wy, wz, lattice_strength, k_l, homogeneous, projector,
+                  v_trap_max=None):
     """
     Resolve every parameter once. Time-dependent terms are returned as
     callables of t (static ones wrapped in trivial lambdas) and a missing
@@ -153,7 +158,7 @@ def _static_terms(geo, n_components, detuning, q_zeeman, omega_r, g_matrix,
         Omega    = _build_rabi_matrix(n_components, omega_r),
         g_matrix = np.asarray(g_matrix),
         V_trap   = (np.zeros_like(geo.dv) if homogeneous
-                    else _build_trap_potential(geo, wx, wy, wz)),
+                    else _build_trap_potential(geo, wx, wy, wz, v_trap_max)),
         delta_fn   = delta_fn,
         lattice_fn = lattice_fn,
         project    = projector if projector is not None else (lambda psi: psi),
@@ -186,7 +191,7 @@ def _make_H_rest(terms, n_atoms):
 def get_rhs(geo, n_components, sigma_z, detuning, q_zeeman, omega_r,
             g_matrix, n_atoms, wx=0.0, wy=0.0, wz=0.0,
             lattice_strength=0.0, k_l=0.0, mode='real', homogeneous=False,
-            projector=None):
+            projector=None, v_trap_max=None):
     """
     Build and return the RHS function rhs(t, psi) for the GP equation.
 
@@ -210,6 +215,8 @@ def get_rhs(geo, n_components, sigma_z, detuning, q_zeeman, omega_r,
     mode             : 'real' or 'imaginary'
     homogeneous      : bool — if True, set the trap potential to zero
                        (lattice is unaffected); default False
+    v_trap_max       : float or None — cap on the trap potential (recoil
+                       energies); default None (no cap)
     projector        : Projector or None — if given, H[ψ] is projected onto
                        the c-field region (PGPE); default None (plain GPE)
 
@@ -224,7 +231,8 @@ def get_rhs(geo, n_components, sigma_z, detuning, q_zeeman, omega_r,
     _sigma_z = np.asarray(sigma_z)
     _dv      = geo.dv
     T = _static_terms(geo, n_components, detuning, q_zeeman, omega_r, g_matrix,
-                      wx, wy, wz, lattice_strength, k_l, homogeneous, projector)
+                      wx, wy, wz, lattice_strength, k_l, homogeneous, projector,
+                      v_trap_max)
     _q_zeeman, _Omega, _g_matrix, _V_trap = (T['q_zeeman'], T['Omega'],
                                              T['g_matrix'], T['V_trap'])
     _delta_fn, _V_lattice_fn, _project   = (T['delta_fn'], T['lattice_fn'],
@@ -258,7 +266,7 @@ def get_rhs(geo, n_components, sigma_z, detuning, q_zeeman, omega_r,
 def get_ip_rhs(geo, n_components, sigma_z, detuning, q_zeeman, omega_r,
                g_matrix, n_atoms, wx=0.0, wy=0.0, wz=0.0,
                lattice_strength=0.0, k_l=0.0, mode='real', homogeneous=False,
-               projector=None):
+               projector=None, v_trap_max=None):
     """
     Split the GP equation for the interaction-picture integrator (RK4IP):
 
@@ -289,7 +297,8 @@ def get_ip_rhs(geo, n_components, sigma_z, detuning, q_zeeman, omega_r,
     eps = mode_energies(geo, soc_dispersion(sigma_z))
     _dv = geo.dv
     T = _static_terms(geo, n_components, detuning, q_zeeman, omega_r, g_matrix,
-                      wx, wy, wz, lattice_strength, k_l, homogeneous, projector)
+                      wx, wy, wz, lattice_strength, k_l, homogeneous, projector,
+                      v_trap_max)
     _project = T['project']
     _H_rest  = _make_H_rest(T, n_atoms)
 
@@ -318,7 +327,7 @@ def estimate_max_energy(geo, psi, times=(0.0,), projector=None, *,
                         n_components, sigma_z, detuning, q_zeeman, omega_r,
                         g_matrix, n_atoms, wx=0.0, wy=0.0, wz=0.0,
                         lattice_strength=0.0, k_l=0.0, homogeneous=False,
-                        kinetic=True):
+                        kinetic=True, v_trap_max=None):
     """
     Upper bound on |E| for the Hamiltonian of get_rhs(), used to choose a
     stable time step. Takes the same keyword arguments as get_rhs().
@@ -359,7 +368,7 @@ def estimate_max_energy(geo, psi, times=(0.0,), projector=None, *,
     delta_fn   = _build_detuning_diagonal(n_components, detuning)
     lattice_fn = _build_lattice_potential(geo, lattice_strength, k_l)
     V_trap     = (np.zeros_like(geo.dv) if homogeneous
-                  else _build_trap_potential(geo, wx, wy, wz))
+                  else _build_trap_potential(geo, wx, wy, wz, v_trap_max))
 
     e_delta = max(np.abs(delta_fn(t) if callable(delta_fn) else delta_fn).max()
                   for t in times)

@@ -8,7 +8,8 @@ The TOML file is structured as:
     [system]      — n_atoms, n_components, scattering lengths, sigma_z, q_zeeman
     [trap]        — trap frequencies in Hz; homogeneous = true removes the
                     trap everywhere, release = true only for real-time
-                    evolution (ground state cooled in the trap)
+                    evolution (ground state cooled in the trap); optional
+                    v_max caps the trap potential (recoil energies)
     [initial_state] — (optional) momentum_kick: split the real-time initial
                     state into ±momentum_kick ħk_R along z
     [spin_orbit]  — omega_r
@@ -304,6 +305,11 @@ def load_config(path):
     logger.info(f"  omega_l     : {sweep['omega_l_start']} → {sweep['omega_l_end']}")
     logger.info(f"  omega_r     : {d['omega_r']}")
 
+    v_max = cfg['trap'].get('v_max')
+    if v_max is not None and v_max < 2 * d['mu']:
+        logger.warning(f"[trap].v_max = {v_max} E_R is below 2 mu ≈ {2 * d['mu']:.2f}: "
+                       f"the cap reaches into the cloud and changes its shape.")
+
     rhs_kwargs = dict(
         n_components     = d['n_comp'],
         sigma_z          = d['sigma_z'],
@@ -318,6 +324,7 @@ def load_config(path):
         lattice_strength = lattice_strength,
         k_l              = d['k_l'],
         homogeneous      = cfg['trap'].get('homogeneous', False),
+        v_trap_max       = cfg['trap'].get('v_max'),
     )
 
     return geo, rhs_kwargs

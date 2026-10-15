@@ -248,7 +248,8 @@ def _as_exchange_matrix(value, n_comp):
 def get_spgpe_rhs(geo, projector, rng, temperature, mu, gamma, energy_damping,
                   exchange_damping=0.0, *, n_components, sigma_z, detuning,
                   q_zeeman, omega_r, g_matrix, n_atoms, wx=0.0, wy=0.0, wz=0.0,
-                  lattice_strength=0.0, k_l=0.0, homogeneous=False):
+                  lattice_strength=0.0, k_l=0.0, homogeneous=False,
+                  v_trap_max=None):
     """
     Build the multi-component SPGPE for the RK4IP integrator.
 
@@ -282,7 +283,7 @@ def get_spgpe_rhs(geo, projector, rng, temperature, mu, gamma, energy_damping,
     eps      = mode_energies(geo, soc_dispersion(sigma_z))
     terms    = _static_terms(geo, n_comp, detuning, q_zeeman, omega_r,
                              g_matrix, wx, wy, wz, lattice_strength, k_l,
-                             homogeneous, projector)
+                             homogeneous, projector, v_trap_max)
     H_rest   = _make_H_rest(terms, n_atoms)
     unit     = energy_damping_kernel(geo, 1.0)            # 1/|k|
     sqrt_u   = np.sqrt(unit)
@@ -401,7 +402,8 @@ def _full_H(geo, psi, **rhs_kwargs):
                            kw['omega_r'], kw['g_matrix'], kw.get('wx', 0.0),
                            kw.get('wy', 0.0), kw.get('wz', 0.0),
                            kw.get('lattice_strength', 0.0), kw.get('k_l', 0.0),
-                           kw.get('homogeneous', False), None)
+                           kw.get('homogeneous', False), None,
+                           kw.get('v_trap_max'))
     psi2d  = np.asarray(psi).reshape(n_comp, -1)
     eps    = mode_energies(geo, soc_dispersion(sigma_z))
     K_psi  = geo.from_spectral(eps * geo.to_spectral(psi2d))

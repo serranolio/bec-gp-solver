@@ -392,3 +392,19 @@ class TestBuildProjector:
         geo, _ = geo_and_kwargs
         proj   = build_projector(dict(cfg, projector={'e_cut': 0.5}), geo)
         assert proj.mask.shape == (cfg['system']['n_components'],) + tuple(geo.sizes)
+
+
+class TestTrapCapConfig:
+
+    def test_v_max_reaches_rhs_kwargs(self, tmp_path, cfg):
+        import tomli_w
+        new = dict(cfg, trap=dict(cfg['trap'], v_max=10.0))
+        path = tmp_path / 'capped.toml'
+        with open(path, 'wb') as f:
+            tomli_w.dump(new, f)
+        _, kw = load_config(path)
+        assert kw['v_trap_max'] == 10.0
+
+    def test_default_is_no_cap(self, geo_and_kwargs):
+        _, kw = geo_and_kwargs
+        assert kw['v_trap_max'] is None

@@ -935,3 +935,31 @@ class TestIPSplit:
         energies = [_energy(geo, psi_t[:, f] / np.sqrt(_norm(geo, psi_t[:, f])), kw)
                     for f in range(psi_t.shape[1])]
         assert np.all(np.diff(energies) < 0)
+
+
+# =============================================================================
+# Trap-potential cap (v_trap_max)
+# =============================================================================
+
+class TestTrapCap:
+
+    def test_cap_applies_only_above_v_max(self):
+        geo = _geo1d(nz=128, lz=40.0)
+        V   = _build_trap_potential(geo, 0.0, 0.0, 0.5)
+        Vc  = _build_trap_potential(geo, 0.0, 0.0, 0.5, v_max=2.0)
+        assert Vc.max() == 2.0
+        assert np.array_equal(Vc[V < 2.0], V[V < 2.0])
+
+    def test_cap_reaches_rhs_and_stability_bound(self):
+        geo, kw, proj, psi = _pgpe_setup()
+        kw = dict(kw, wz=1.0)                         # V reaches ~250 at the edges
+        e_full = estimate_max_energy(geo, psi, (0.0,), None, **kw)
+        e_cap  = estimate_max_energy(geo, psi, (0.0,), None, v_trap_max=5.0, **kw)
+        assert e_full - e_cap > 200
+        # the right-hand sides differ only where V exceeds the cap
+        z,  = geo.grids
+        far = np.tile((z / 2)**2 > 5.0, 2)
+        a = get_rhs(geo=geo, mode='real', **kw)(0.0, psi)
+        b = get_rhs(geo=geo, mode='real', v_trap_max=5.0, **kw)(0.0, psi)
+        assert np.allclose(a[~far], b[~far])
+        assert not np.allclose(a[far], b[far])
