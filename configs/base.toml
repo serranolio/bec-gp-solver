@@ -36,6 +36,7 @@ fx = 176.22        # Hz
 fy = 198.53        # Hz
 fz = 27.99         # Hz
 homogeneous = false # if true, trap potential is set to zero
+# release   = true  # optional: trap on for the ground state, off for real-time evolution
 
 # =============================================================================
 # Spin-orbit coupling
@@ -70,6 +71,14 @@ step_size = 0.02      # RK4 step for imaginary time (recoil units), checked agai
 #   and e^{+i k_l z} on component 1 (stripe-like guess). Defaults to false.
 # initial_weights = [1.0, 1.0, 0.0]
 # modulation      = false
+
+# =============================================================================
+# Real-time initial state (optional)
+# =============================================================================
+# momentum_kick splits the initial state into two momentum components along z:
+#   psi -> psi (e^(-i k z) + e^(+i k z)) / sqrt(2),  k = momentum_kick (units of k_R)
+# [initial_state]
+# momentum_kick = 2.0
 
 # =============================================================================
 # Real-time simulation

@@ -6,7 +6,11 @@ Load a TOML configuration file and build all inputs needed by get_rhs().
 The TOML file is structured as:
     [constants]   — physical constants
     [system]      — n_atoms, n_components, scattering lengths, sigma_z, q_zeeman
-    [trap]        — trap frequencies in Hz
+    [trap]        — trap frequencies in Hz; homogeneous = true removes the
+                    trap everywhere, release = true only for real-time
+                    evolution (ground state cooled in the trap)
+    [initial_state] — (optional) momentum_kick: split the real-time initial
+                    state into ±momentum_kick ħk_R along z
     [spin_orbit]  — omega_r
     [geometry]    — grid sizes, box size factors
     [lattice]     — ramp duration in ms

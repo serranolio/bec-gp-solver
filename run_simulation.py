@@ -299,6 +299,33 @@ def prepare_initial_state(cfg, geo, initial_state_path=None):
     return _renormalise(psi0, geo, n_comp)
 
 
+def apply_momentum_kick(psi, geo, n_comp, k_kick):
+    """
+    Split every component into two momentum components ±ħ k_kick along z:
+
+        ψ -> ψ (e^{-i k_kick z} + e^{+i k_kick z}) / √2 = √2 cos(k_kick z) ψ
+
+    k_kick is in units of k_R (k_kick = 2 gives momenta ±2ħk_R). The result
+    is renormalised to unit norm.
+    """
+    z    = geo.grids[-1].reshape(-1)
+    kick = (np.exp(-1j * k_kick * z) + np.exp(1j * k_kick * z)) / np.sqrt(2)
+    out  = (psi.reshape(n_comp, -1) * kick[None, :]).reshape(-1)
+    return _renormalise(out, geo, n_comp)
+
+
+def _evolution_kwargs(cfg, rhs_kwargs):
+    """
+    rhs_kwargs for real-time evolution: with [trap].release = true the trap
+    is switched off for the evolution only (the ground state is still
+    cooled in the trap).
+    """
+    if cfg['trap'].get('release', False):
+        logger.info("Trap released: real-time evolution without the trap.")
+        return dict(rhs_kwargs, homogeneous=True)
+    return rhs_kwargs
+
+
 # =============================================================================
 # Imaginary-time cooling
 # =============================================================================
@@ -511,16 +538,26 @@ def run(config_path,
 
     # PGPE/SPGPE evolve only the c-field: start from the projected state
     rhs_projector = projector if mode in PROJECTED_MODES else None
-    if rhs_projector is not None:
-        psi0 = _renormalise(projector(psi0), geo, d['n_comp'])
 
     # --- imaginary-time mode: cool and exit ---
     if imag:
+        if rhs_projector is not None:
+            psi0 = _renormalise(projector(psi0), geo, d['n_comp'])
         run_imaginary_time(cfg, geo, rhs_kwargs, psi0, output_dir,
                            projector=rhs_projector)
         return
 
     # --- real-time mode ---
+
+    # optional momentum kick of the initial state, then projection
+    k_kick = cfg.get('initial_state', {}).get('momentum_kick')
+    if k_kick:
+        logger.info(f"Momentum kick: ψ -> ψ (e^(-i {k_kick} z) + e^(+i {k_kick} z))/√2")
+        psi0 = apply_momentum_kick(psi0, geo, d['n_comp'], k_kick)
+    if rhs_projector is not None:
+        psi0 = _renormalise(projector(psi0), geo, d['n_comp'])
+
+    rhs_kwargs = _evolution_kwargs(cfg, rhs_kwargs)
 
     # one random stream per run (TWA and SPGPE noise); with
     # [simulation].seed set, each sample gets a reproducible stream

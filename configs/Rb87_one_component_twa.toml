@@ -1,0 +1,104 @@
+# Rb87_one_component_twa.toml
+# Fixed physical parameters shared across all simulations in a sweep.
+# The sweep script copies this file and adds/overrides the [sweep] section.
+# All frequencies in Hz, times in ms, lengths in recoil units.
+
+# =============================================================================
+# Physical constants
+# =============================================================================
+[constants]
+m_ua     = 86.909187
+hbar_si  = 1.054571800139113e-34
+a_si     = 5.2917721067e-11
+f_recoil = 1080.0            # Hz
+
+# =============================================================================
+# System
+# =============================================================================
+[system]
+n_atoms      = 500_000.0
+n_components = 1
+sigma_z      = [0.0]
+q_zeeman_hz  = [0.0]  # Hz
+
+# scattering length matrix in units of a_si
+a_matrix = [[100.40, ]]
+
+#a_matrix = [
+#    [100.40, 100.40],
+#    [100.40, 100.40]
+#]
+
+# =============================================================================
+# Trap
+# =============================================================================
+[trap]
+fx = 113.51   # Hz
+fy = 119.83   # Hz
+fz = 11.69    # Hz
+release = true      # trap on for the ground state, off for the real-time expansion
+
+# =============================================================================
+# Spin-orbit coupling
+# =============================================================================
+[spin_orbit]
+omega_r = 0.0
+
+# =============================================================================
+# Geometry
+# =============================================================================
+[geometry]
+kind         = "3d_axial"
+nx           = 1088         # alias-free for e_cut = 6.25: k_r,max = 5.25 >= 2 k_cut
+ny           = 0            # unused for 3d_axial and 2d_cart
+nz           = 3072         # alias-free for e_cut = 6.25: k_z,max = 5.35 >= 2 k_cut
+lx_rx_factor = 28.0         # lx ≈ 650: halo (v ≈ 4.4) reaches ≈ 560 in 18 ms; r = lx is a hard wall
+ly_ry_factor = 0.0          # unused for 3d_axial and 2d_cart
+lz_rz_factor = 8.0          # lz ≈ 1803: fronts reach ≈ ±763 in 18 ms; z is periodic
+
+# =============================================================================
+# Ground state cooling (imaginary time)
+# =============================================================================
+[ground_state]
+steps     = 2000
+step_size = 0.02      # recoil units
+
+# =============================================================================
+# Real-time simulation
+# =============================================================================
+[simulation]
+mode        = "pgpe"  # projected GPE (c-field) with TWA noise
+t_frames    = 50      # number of output frames
+twa_noise   = true   # add TWA quantum noise to initial state
+
+# Which observables to save — add/remove entries as needed.
+# Supported: "polarization", "populations", "wavefunction", "momentum_density"
+observables = ["wavefunction"]
+
+# =============================================================================
+# c-field projector
+# =============================================================================
+# Modes with k_perp² + k_z² < e_cut (recoil energies) form the c-field. The
+# clouds move at k = ±2 (energy 4 E_R) and scatter onto the halo |k| = 2, so
+# k_cut = 2.5 leaves room for their momentum width. ~583k modes ≈ 1.17 N:
+# the TWA mode-count warning is expected.
+[projector]
+e_cut = 6.25
+
+# =============================================================================
+# Real-time initial state: split into ±2ħk_R along z (collision)
+# =============================================================================
+[initial_state]
+momentum_kick = 2.0
+
+# =============================================================================
+# Sweep parameters (overridden per job by generate_sweep.py)
+# =============================================================================
+[sweep]
+sample         = 1
+ramp_time_ms   = 80.0
+total_time_ms  = 18.0
+delta_start_hz = 0.0
+delta_end_hz   = 0.0
+omega_l_start  = 0.0
+omega_l_end    = 0.0
