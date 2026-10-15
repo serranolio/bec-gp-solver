@@ -10,7 +10,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=2G
+#SBATCH --mem=8G
 
 # Array range is set dynamically by submit.sh — do not call sbatch directly.
 ## SBATCH --array=0-4
@@ -51,6 +51,13 @@ if [ -z "$CONFIG" ]; then
 fi
 
 echo "Task ${SLURM_ARRAY_TASK_ID}: running config ${CONFIG}"
+
+# --- threads: one BLAS/OpenMP thread per allocated core ---
+# Without this, OpenBLAS may start a thread for every core on the node in
+# each job, and array tasks sharing a node oversubscribe it.
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 # --- run ---
 srun pixi run python run_simulation.py \

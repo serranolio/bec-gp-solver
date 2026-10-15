@@ -5,7 +5,7 @@
 #SBATCH --error=logs/%x_%A_%a.err
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=federico.serrano@wsu.edu
-#SBATCH --time=0-06:00:00
+#SBATCH --time=0-12:00:00
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -47,6 +47,13 @@ if [ -n "${INITIAL_STATE:-}" ]; then
     echo "Using initial state: ${INITIAL_STATE}"
     EXTRA_ARGS+=(--initial-state "${INITIAL_STATE}")
 fi
+
+# --- threads: one BLAS/OpenMP thread per allocated core ---
+# Without this, OpenBLAS may start a thread for every core on the node and
+# oversubscribe it when other jobs share the node.
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 # --- run imaginary-time cooling ---
 srun pixi run python run_simulation.py \
