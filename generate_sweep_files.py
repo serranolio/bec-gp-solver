@@ -48,12 +48,16 @@ SWEEP = {
     'omega_l_end'    : [0.3],
     'sample'         : [1],
     'omega_r'        : [2.7],
+    'amplitude_hz'   : [0.0],          # detuning modulation A (Hz), [detuning_modulation]
+    'frequency_hz'   : [0.0],          # detuning modulation f (Hz), [detuning_modulation]
 }
 
 # Sweep keys default to the [sweep] section. Keys that live in a different
 # config section are listed here so the override lands in the right place.
 SECTION_OF = {
-    'omega_r' : 'spin_orbit',
+    'omega_r'      : 'spin_orbit',
+    'amplitude_hz' : 'detuning_modulation',
+    'frequency_hz' : 'detuning_modulation',
 }
 
 def generate_sweep(base_path, out_dir):
@@ -79,7 +83,7 @@ def generate_sweep(base_path, out_dir):
         params = dict(zip(keys, combo))
         for key, val in params.items():
             section = SECTION_OF.get(key, 'sweep')
-            cfg[section][key] = val
+            cfg.setdefault(section, {})[key] = val
 
         job_path = out_dir / f'job_{i:04d}.toml'
         with open(job_path, 'wb') as f:
