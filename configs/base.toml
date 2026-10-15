@@ -81,6 +81,17 @@ step_size = 0.02      # RK4 step for imaginary time (recoil units), checked agai
 # momentum_kick = 2.0
 
 # =============================================================================
+# Detuning modulation (optional, real-time evolution only)
+# =============================================================================
+# On top of the detuning ramp, δ(t) gets + A sin(2π f t) with
+#   amplitude_hz  = A   (Hz, like delta_*_hz)
+#   frequency_hz  = f   (Hz)
+# The modulation starts at t = 0 (sin 0 = 0), so the ground state is unchanged.
+# [detuning_modulation]
+# amplitude_hz  = 50.0
+# frequency_hz  = 500.0
+
+# =============================================================================
 # Real-time simulation
 # =============================================================================
 [simulation]

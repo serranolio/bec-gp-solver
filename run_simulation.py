@@ -478,12 +478,36 @@ def compute_observables(psi_t, geo, cfg):
 
 def build_output_stem(cfg):
     s = cfg['sweep']
-    return (f"sample_{s['sample']}"
+    stem = (f"sample_{s['sample']}"
             f"_ramp_{s['ramp_time_ms']:.0f}ms"
             f"_di_{s['delta_start_hz']:.0f}hz"
             f"_df_{s['delta_end_hz']:.0f}hz"
             f"_omli_{s['omega_l_start']:.2f}"
             f"_omlf_{s['omega_l_end']:.2f}")
+    mod = cfg.get('detuning_modulation', {})
+    stem += (f"_mod_{mod.get('amplitude_hz', 0.0):g}hz"
+             f"_{mod.get('frequency_hz', 0.0):g}hz")
+    return stem
+
+
+def _cap_dt_for_modulation(dt, detuning, requested):
+    """
+    Keep at least 20 steps per period of a sinusoidal detuning. A default
+    dt is reduced to that; a requested dt above it is kept with a warning.
+    """
+    omega = getattr(detuning, 'modulation_omega', 0.0)
+    if omega <= 0:
+        return dt
+    cap = 2 * pi / (20 * omega)
+    if dt <= cap:
+        return dt
+    if requested is None:
+        logger.info(f"Detuning modulation: dt reduced to {cap:.4g} "
+                    f"(20 steps per period {2 * pi / omega:.4g})")
+        return cap
+    logger.warning(f"dt={dt:.4g} resolves the detuning modulation (period "
+                   f"{2 * pi / omega:.4g}) with fewer than 20 steps per period.")
+    return dt
 
 
 # =============================================================================
@@ -599,6 +623,7 @@ def run(config_path,
                                   res['exchange_damping'], **rhs_kwargs)
         dt    = resolve_dt(sim.get('dt'), e_max,
                            t_total=t_total + res['t_equilibrate'])
+        dt    = _cap_dt_for_modulation(dt, rhs_kwargs['detuning'], sim.get('dt'))
         rates, rhs_N, step_hook = get_spgpe_rhs(
             geo, projector, rng, res['temperature'], res['mu'], res['gamma'],
             res['energy_damping'], res['exchange_damping'], **rhs_kwargs)
@@ -613,6 +638,7 @@ def run(config_path,
         e_max        = estimate_max_energy(geo, psi0, (0.0, t_total), rhs_projector,
                                            kinetic=False, **rhs_kwargs)
         dt           = resolve_dt(sim.get('dt'), e_max, t_total=t_total)
+        dt           = _cap_dt_for_modulation(dt, rhs_kwargs['detuning'], sim.get('dt'))
         rates, rhs_N = get_ip_rhs(geo=geo, mode='real', projector=rhs_projector,
                                   **rhs_kwargs)
 

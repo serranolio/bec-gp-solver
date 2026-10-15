@@ -234,9 +234,18 @@ def _build_lattice_ramp(cfg, t_unit):
 
 def _build_detuning_ramp(cfg, t_unit):
     """
-    Linear ramp: delta_start_hz → delta_end_hz over t_ramp_ms.
-    Start/end come from [sweep] in Hz and are converted to recoil units.
-    Saturates after t_ramp; t_ramp_ms = 0 is a sudden quench.
+    Detuning δ(t) in recoil units.
+
+    Linear ramp delta_start_hz → delta_end_hz over ramp_time_ms (a sudden
+    quench for ramp_time_ms = 0). If [detuning_modulation] is present, the
+    sinusoid A sin(ω t) is added on top:
+        amplitude_hz  → A = amplitude_hz / f_recoil   (recoil energies)
+        frequency_hz  → ω = 2π frequency_hz × t_unit  (per recoil time unit)
+    The modulation starts at t = 0, so the ground state (t = 0) is unchanged.
+
+    The returned callable carries three attributes used by the solver:
+      bound             — max |δ(t)| over all t (for the stability estimate)
+      modulation_omega  — ω, or 0 without modulation (for the time step)
     """
     sweep       = cfg['sweep']
     f_recoil    = cfg['constants']['f_recoil']
@@ -244,7 +253,26 @@ def _build_detuning_ramp(cfg, t_unit):
     delta_end   = sweep['delta_end_hz']   / f_recoil
     t_ramp      = sweep['ramp_time_ms'] * 1e-3 / t_unit
 
-    return _linear_ramp(delta_start, delta_end, t_ramp)
+    ramp       = _linear_ramp(delta_start, delta_end, t_ramp)
+    ramp_bound = max(abs(delta_start), abs(delta_end))   # linear in between
+    mod        = cfg.get('detuning_modulation')
+
+    if mod is None:
+        ramp.bound            = ramp_bound
+        ramp.modulation_omega = 0.0
+        return ramp
+
+    amp   = mod['amplitude_hz'] / f_recoil
+    omega = 2 * pi * mod['frequency_hz'] * t_unit
+
+    def detuning(t):
+        return ramp(t) + amp * np.sin(omega * t)
+
+    detuning.bound            = ramp_bound + abs(amp)
+    detuning.modulation_omega = omega
+    logger.info(f"  modulation  : A = {mod['amplitude_hz']} Hz, "
+                f"f = {mod['frequency_hz']} Hz (ω = {omega:.4g} per recoil time)")
+    return detuning
 
 
 # =============================================================================

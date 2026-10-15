@@ -370,8 +370,13 @@ def estimate_max_energy(geo, psi, times=(0.0,), projector=None, *,
     V_trap     = (np.zeros_like(geo.dv) if homogeneous
                   else _build_trap_potential(geo, wx, wy, wz, v_trap_max))
 
-    e_delta = max(np.abs(delta_fn(t) if callable(delta_fn) else delta_fn).max()
-                  for t in times)
+    if hasattr(detuning, 'bound'):
+        # the diagonal is (2i - 1) δ / 2, so the largest entry is max|2i - 1| / 2
+        diag_factor = np.abs((2 * np.arange(n_components) - 1) / 2).max()
+        e_delta     = diag_factor * detuning.bound
+    else:
+        e_delta = max(np.abs(delta_fn(t) if callable(delta_fn) else delta_fn).max()
+                      for t in times)
     e_pot   = max((V_trap + (lattice_fn(t) if callable(lattice_fn)
                              else lattice_fn)).max()
                   for t in times)
